@@ -346,23 +346,7 @@ HARDCODED_SCHEMA = {
 
 @lru_cache()
 def load_custom_schema(url):
-    # Avoid circular import
-    from .tags.core import AsdfObject
-    custom = load_schema(url, resolve_local_refs=True)
-    core = load_schema(AsdfObject.yaml_tag)
-
-    def update(d, u):
-        for k, v in u.items():
-            # Respect the property ordering of the core schema
-            if k == 'propertyOrder' and k in d:
-                d[k] = u[k] + d[k]
-            elif isinstance(v, Mapping):
-                d[k] = update(d.get(k, {}), v)
-            else:
-                d[k] = v
-        return d
-
-    return update(custom, core)
+    return load_schema(url, resolve_references=True)
 
 
 def load_schema(url, resolver=None, resolve_references=False,
