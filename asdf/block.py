@@ -920,7 +920,18 @@ class Block:
 
     def _calculate_checksum(self, data):
         m = hashlib.new('md5')
-        m.update(self.data.flatten())
+
+        data = data.reshape(-1)
+        if data.flags.c_contiguous:
+            m.update(data)
+        else:
+            # The update() method requires C-contiguous input.
+            # Rather than make a contiguous copy (which may cost
+            # more memory than we can spare), update with the
+            # individual array elements one-by-one.
+            for elem in data:
+                m.update(elem)
+
         return m.digest()
 
     def validate_checksum(self):

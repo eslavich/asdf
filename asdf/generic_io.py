@@ -95,9 +95,9 @@ size : integer
 
 
 def _array_tofile_chunked(write, array, chunksize):  # pragma: no cover
-    array = array.view(np.uint8).flatten()
-    for i in range(0, array.nbytes, chunksize):
-        write(array[i:i + chunksize].data)
+    items_per_chunk = int(chunksize / array.itemsize)
+    for i in range(0, len(array), items_per_chunk):
+        write(array[i:i + items_per_chunk].data)
 
 
 def _array_tofile_simple(fd, write, array):
@@ -372,7 +372,7 @@ class GenericFile(metaclass=util.InheritDocstrings):
     """
 
     def write_array(self, array):
-        _array_tofile(None, self.write, array.ravel(order='A'))
+        _array_tofile(None, self.write, array.reshape(-1, order='A'))
 
     def seek(self, offset, whence=0):
         """
@@ -751,7 +751,7 @@ class RealFile(RandomAccessFile):
             arr.flush()
             self.fast_forward(len(arr.data))
         else:
-            _array_tofile(self._fd, self._fd.write, arr.ravel(order='A'))
+            _array_tofile(self._fd, self._fd.write, arr.reshape(-1, order='A'))
 
     def can_memmap(self):
         return True
