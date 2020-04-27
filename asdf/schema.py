@@ -697,7 +697,9 @@ def check_schema(schema):
                              validators=VALIDATORS)
     validator = cls(meta_schema, resolver=resolver)
 
-    instance_validator = mvalidators.Draft4Validator(schema, resolver=resolver)
+    instance_validator = get_validator(schema)
+
+#    mvalidators.Draft4Validator(schema, resolver=resolver)
     scope = schema.get('id', '')
 
     validator.validate(schema, _schema=meta_schema)
