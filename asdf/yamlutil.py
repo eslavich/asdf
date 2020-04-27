@@ -162,6 +162,8 @@ class AsdfLoader(_yaml_base_loader):
     A specialized YAML loader that can construct "tagged basic Python
     data types" as implemented in the `tagged` module.
     """
+    ctx = None
+    ignore_version_mismatch = False
 
     def construct_undefined(self, node):
         if isinstance(node, yaml.MappingNode):
@@ -209,9 +211,11 @@ class AsdfLoader(_yaml_base_loader):
             omap[key] = value
 
     def _fix_tag(self, node):
-        return self.ctx.type_index.fix_yaml_tag(
-            self.ctx, node.tag, self.ignore_version_mismatch)
-
+        if self.ctx is not None:
+            return self.ctx.type_index.fix_yaml_tag(
+                self.ctx, node.tag, self.ignore_version_mismatch)
+        else:
+            return node.tag
 
 # pyyaml will invoke the constructor associated with None when a node's
 # tag is not explicitly handled by another constructor.
@@ -349,6 +353,8 @@ def dump_tree(tree, fd, ctx):
         tags = {'!': yaml_tag}
 
     tree = custom_tree_to_tagged_tree(tree, ctx)
+
+    # TODO: combine these two
     schema.validate(tree, ctx)
     schema.remove_defaults(tree, ctx)
 

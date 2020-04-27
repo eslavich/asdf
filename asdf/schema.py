@@ -22,6 +22,7 @@ from . import constants
 from . import generic_io
 from . import reference
 from . import treeutil
+from . import yamlutil
 from . import util
 from .extension import default_extensions
 from .compat.jsonschemacompat import JSONSCHEMA_LT_3
@@ -167,6 +168,8 @@ YAML_VALIDATORS.update({
     'type': validate_type
 })
 
+DRAFT_4_PROPERTIES_VALIDATOR = mvalidators.Draft4Validator.VALIDATORS['properties']
+
 
 def validate_fill_default(validator, properties, instance, schema):
     if not validator.is_type(instance, 'object'):
@@ -176,10 +179,11 @@ def validate_fill_default(validator, properties, instance, schema):
         if "default" in subschema:
             instance.setdefault(property, subschema["default"])
 
-    for err in mvalidators.Draft4Validator.VALIDATORS['properties'](
-        validator, properties, instance, schema):
-        yield err
+    return DRAFT_4_PROPERTIES_VALIDATOR(validator, properties, instance, schema)
 
+
+YAML_VALIDATORS_FILL_DEFAULTS = YAML_VALIDATORS.copy()
+YAML_VALIDATORS_FILL_DEFAULTS["properties"] = validate_fill_default
 
 FILL_DEFAULTS = util.HashableDict()
 for key in ('allOf', 'anyOf', 'oneOf', 'items'):
@@ -196,9 +200,11 @@ def validate_remove_default(validator, properties, instance, schema):
             if instance.get(property, None) == subschema["default"]:
                 del instance[property]
 
-    for err in mvalidators.Draft4Validator.VALIDATORS['properties'](
-        validator, properties, instance, schema):
-        yield err
+    return DRAFT_4_PROPERTIES_VALIDATOR(validator, properties, instance, schema)
+
+
+YAML_VALIDATORS_REMOVE_DEFAULTS = YAML_VALIDATORS.copy()
+YAML_VALIDATORS_REMOVE_DEFAULTS["properties"] = validate_remove_default
 
 
 REMOVE_DEFAULTS = util.HashableDict()
@@ -355,7 +361,7 @@ def _load_schema(url):
             json_data = fd.read().decode('utf-8')
             result = json.loads(json_data, object_pairs_hook=OrderedDict)
         else:
-            result = yaml.load(fd, Loader=OrderedLoader)
+            result = yaml.load(fd, Loader=yamlutil.AsdfLoader)
     return result, fd.uri
 
 
