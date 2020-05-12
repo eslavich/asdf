@@ -166,6 +166,7 @@ supported_versions = [
     AsdfVersion('1.3.0'),
     AsdfVersion('1.4.0'),
     AsdfVersion('1.5.0'),
+    AsdfVersion('1.6.0'),
 ]
 
 default_version = supported_versions[-1]
