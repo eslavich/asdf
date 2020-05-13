@@ -27,11 +27,11 @@ class AsdfMapper(metaclass=AsdfMapperMeta):
 
     @classmethod
     def create_mappers(cls, extension):
-        return [cls(schema_id, extension) for schema_id in cls.schema_ids]
+        return [cls(extension, schema_id) for schema_id in cls.schema_ids]
 
-    def __init__(self, schema_id, extension):
-        self.schema_id = schema_id
+    def __init__(self, extension, schema_id):
         self.extension = extension
+        self.schema_id = schema_id
 
     @property
     def version(self):
@@ -65,9 +65,10 @@ class AsdfMapper(metaclass=AsdfMapperMeta):
 
 
 class MapperIndex:
-    def __init__(self, mappers):
+    def __init__(self, standard_index, mappers):
+        self._standard_index = standard_index
         self._mappers_by_schema_id = {}
-        self._mappers_by_type = {}
+        self._mappers_by_type_by_schema_id = {}
 
         for mapper in mappers:
             if mapper.schema_id in self._mappers_by_schema_id:
@@ -81,18 +82,27 @@ class MapperIndex:
             self._mappers_by_schema_id[mapper.schema_id] = mapper
 
             for typ in mapper.types:
-                if typ in self._mappers_by_type:
-                    other_mapper = self._mappers_by_type[typ]
-                    message = (
-                        f"Mapper for type '{typ.__name__}' provided by both "
-                        f"{other_mapper.extension.__name__} and {mapper.extension.__name__}. "
-                        "Please deselect one of the conflicting extensions."
-                    )
-                    raise ValueError(message)
-                self._mappers_by_type[typ] = mapper
+                if typ not in self._mappers_by_type_by_schema_id:
+                    self._mappers_by_type_by_schema_id[typ] = {}
+
+                self._mappers_by_type_by_schema_id[typ][mapper.schema_id] = mapper
+
 
     def from_schema_id(self, schema_id):
         return self._mappers_by_schema_id.get(schema_id)
 
     def from_type(self, type):
-        return self._mappers_by_type.get(type)
+        result = self._mappers_by_type_by_schema_id.get(type, {})
+        schema_ids = set(result.keys())
+        # TODO: This should be overridable with standards set on the AsdfFile:
+        intersection = schema_ids.intersection(self._standard_index.get_schema_ids())
+        if len(intersection) == 0:
+            return None
+        elif len(intersection) == 1:
+            return result[intersection.pop()]
+        else:
+            # TODO: Make this message more helpful
+            message = (
+                f"Ambiguous mapper support for type '{type.__name__}'."
+            )
+            raise ValueError(message)

@@ -9,6 +9,7 @@ from pkg_resources import iter_entry_points
 from . import types
 from . import mapper
 from . import resolver
+from . import standard
 from .util import get_class_name
 from .type_index import AsdfTypeIndex
 from .version import version as asdf_version
@@ -45,6 +46,13 @@ class AsdfExtension(metaclass=abc.ABCMeta):
     @property
     def mappers(self):
         return []
+
+    @property
+    def standard_ids(self):
+        return []
+
+    def get_standard_path(self, standard_id):
+        raise NotImplementedError("Does not implement get_standard_path")
 
     @abc.abstractproperty
     def tag_mapping(self):
@@ -123,6 +131,7 @@ class AsdfExtensionList:
         tag_mapping = []
         url_mapping = []
         validators = {}
+        standards = []
         self._type_index = AsdfTypeIndex()
 
         mappers = []
@@ -146,7 +155,14 @@ class AsdfExtensionList:
                         raise TypeError(f"Class '{extension.__name__}' mappers must subclass asdf.AsdfMapper")
                     mappers.extend(mapper_class.create_mappers(extension))
 
-        self._mapper_index = mapper.MapperIndex(mappers)
+            if hasattr(extension, "standard_ids"):
+                for standard_id in extension.standard_ids:
+                    path = extension.get_standard_path(standard_id)
+                    if path is not None:
+                        standards.append(standard.SchemaStandard(standard_id, path))
+
+        standard_index = standard.SchemaStandardIndex(standards)
+        self._mapper_index = mapper.MapperIndex(standard_index, mappers)
         self._tag_mapping = resolver.Resolver(tag_mapping, 'tag')
         self._url_mapping = resolver.Resolver(url_mapping, 'url')
         self._resolver = resolver.ResolverChain(self._tag_mapping, self._url_mapping)
