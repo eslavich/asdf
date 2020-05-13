@@ -1,7 +1,7 @@
 from types import GeneratorType
 
 from . import tagged
-from versioning import AsdfVersion
+from .versioning import AsdfVersion
 
 
 class AsdfMapperMeta(type):
@@ -92,7 +92,7 @@ class MapperIndex:
                 self._mappers_by_type[typ] = mapper
 
     def from_schema_id(self, schema_id):
-        return self._mapper_by_schema_id.get(schema_id)
+        return self._mappers_by_schema_id.get(schema_id)
 
     def from_type(self, type):
-        return self._mapper_by_type[type]
+        return self._mappers_by_type.get(type)
