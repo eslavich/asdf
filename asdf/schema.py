@@ -157,7 +157,7 @@ def validate_type(validator, types, instance, schema):
 YAML_VALIDATORS = util.HashableDict(
     mvalidators.Draft4Validator.VALIDATORS.copy())
 YAML_VALIDATORS.update({
-    'tag': validate_tag,
+#    'tag': validate_tag,
     'propertyOrder': validate_propertyOrder,
     'flowStyle': validate_flowStyle,
     'style': validate_style,

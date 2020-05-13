@@ -18,7 +18,7 @@ class AsdfMapperMeta(type):
                 raise TypeError(f"Class '{name}' types must subclass type")
             attrs["types"] = types
 
-        cls = super().__new__(mcls, name, bases, attrs)
+        return super().__new__(mcls, name, bases, attrs)
 
 
 class AsdfMapper(metaclass=AsdfMapperMeta):
@@ -35,7 +35,7 @@ class AsdfMapper(metaclass=AsdfMapperMeta):
 
     @property
     def version(self):
-        return AsdfVersion(schema_id.rsplit("-", 1)[-1])
+        return AsdfVersion(self.schema_id.rsplit("-", 1)[-1])
 
     def to_tree(self, obj, ctx):
         raise NotImplementedError("AsdfMapper subclasses must implement to_tree")
@@ -52,7 +52,7 @@ class AsdfMapper(metaclass=AsdfMapperMeta):
         else:
             generator = None
 
-        node = _maybe_tag_node(node, ctx)
+        node = self._maybe_tag_node(node, ctx)
         yield node
         if generator is not None:
             yield from generator
@@ -75,7 +75,7 @@ class MapperIndex:
                 other_mapper = self._mappers_by_schema_id[mapper.schema_id]
                 message = (
                     f"Mapper for schema id '{mapper.schema_id}' provided by both "
-                    f"{other_mapper.extension.__name__} and {mapper.extension.__name__}. "
+                    f"{type(other_mapper.extension).__name__} and {type(mapper.extension).__name__}. "
                     "Please deselect one of the conflicting extensions."
                 )
                 raise ValueError(message)

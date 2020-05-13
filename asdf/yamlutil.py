@@ -257,7 +257,7 @@ def tagged_tree_to_custom_tree(tree, ctx, force_raw_types=False):
 
         mapper = ctx.mapper_index.from_schema_id(tag)
         if mapper is not None:
-            return mapper.from_tree(node)
+            return mapper.from_tree(node, ctx)
 
         tag_type = ctx.type_index.from_yaml_tag(ctx, tag)
 

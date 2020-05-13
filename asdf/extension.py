@@ -151,8 +151,8 @@ class AsdfExtensionList:
 
             if hasattr(extension, "mappers"):
                 for mapper_class in extension.mappers:
-                    if not isinstance(mapper_class, mapper.AsdfMapper):
-                        raise TypeError(f"Class '{extension.__name__}' mappers must subclass asdf.AsdfMapper")
+                    if not issubclass(mapper_class, mapper.AsdfMapper):
+                        raise TypeError(f"Class '{mapper_class.__name__}' must subclass asdf.AsdfMapper")
                     mappers.extend(mapper_class.create_mappers(extension))
 
             if hasattr(extension, "standard_ids"):
