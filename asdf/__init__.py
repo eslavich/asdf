@@ -22,6 +22,7 @@ __all__ = [
 
 from .asdf import AsdfFile, open_asdf
 from .types import CustomType
+from .mapper import AsdfMapper
 from .extension import AsdfExtension
 from .stream import Stream
 from . import commands

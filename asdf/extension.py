@@ -7,6 +7,7 @@ import warnings
 from pkg_resources import iter_entry_points
 
 from . import types
+from . import mapper
 from . import resolver
 from .util import get_class_name
 from .type_index import AsdfTypeIndex
@@ -39,6 +40,10 @@ class AsdfExtension(metaclass=abc.ABCMeta):
         custom objects to and from ASDF.
         """
         pass
+
+    @property
+    def mappers(self):
+        return []
 
     @abc.abstractproperty
     def tag_mapping(self):
@@ -118,6 +123,8 @@ class AsdfExtensionList:
         url_mapping = []
         validators = {}
         self._type_index = AsdfTypeIndex()
+
+        mappers = []
         for extension in extensions:
             if not isinstance(extension, AsdfExtension):
                 raise TypeError(
@@ -131,6 +138,14 @@ class AsdfExtensionList:
                 for sibling in typ.versioned_siblings:
                     self._type_index.add_type(sibling, extension)
                     validators.update(sibling.validators)
+
+            if hasattr(extension, "mappers"):
+                for mapper_class in extension.mappers:
+                    if not isinstance(mapper_class, mapper.AsdfMapper):
+                        raise TypeError(f"Class '{extension.__name__}' mappers must subclass asdf.AsdfMapper")
+                    mappers.extend(mapper_class.create_mappers(extension))
+
+        self._mapper_index = mapper.MapperIndex(mappers)
         self._tag_mapping = resolver.Resolver(tag_mapping, 'tag')
         self._url_mapping = resolver.Resolver(url_mapping, 'url')
         self._resolver = resolver.ResolverChain(self._tag_mapping, self._url_mapping)
@@ -160,6 +175,10 @@ class AsdfExtensionList:
     @property
     def type_index(self):
         return self._type_index
+
+    @property
+    def mapper_index(self):
+        return self._mapper_index
 
     @property
     def validators(self):

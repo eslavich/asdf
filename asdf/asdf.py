@@ -334,6 +334,10 @@ class AsdfFile(versioning.VersionedMixin):
     def type_index(self):
         return self._extensions.type_index
 
+    @property
+    def mapper_index(self):
+        return self._extensions.mapper_index
+
     def resolve_uri(self, uri):
         """
         Resolve a (possibly relative) URI against the URI of this ASDF

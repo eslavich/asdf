@@ -222,6 +222,10 @@ def custom_tree_to_tagged_tree(tree, ctx):
     annotated with tags.
     """
     def walker(node):
+        mapper = ctx.mapper_index.from_type(type(node))
+        if mapper is not None:
+            return mapper.to_tree_tagged(node, ctx)
+
         tag = ctx.type_index.from_custom_type(type(node), ctx.version_string)
         if tag is not None:
             return tag.to_tree_tagged(node, ctx)
@@ -251,7 +255,12 @@ def tagged_tree_to_custom_tree(tree, ctx, force_raw_types=False):
         if tag is None:
             return node
 
+        mapper = ctx.mapper_index.from_schema_id(ctx, tag)
+        if mapper is not None:
+            return mapper.from_tree(node)
+
         tag_type = ctx.type_index.from_yaml_tag(ctx, tag)
+
         # This means the tag did not correspond to any type in our type index.
         if tag_type is None:
             if not ctx._ignore_unrecognized_tag:
