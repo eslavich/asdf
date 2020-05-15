@@ -14,8 +14,8 @@ def find_schema_path():
     dirname = os.path.dirname(__file__)
 
     # This means we are working within a development build
-    if os.path.exists(os.path.join(dirname, '..', '..', 'asdf-standard')):
-        return os.path.join(dirname, '..', '..', 'asdf-standard', 'schemas')
+    if os.path.exists(os.path.join(dirname, '..', 'asdf-standard')):
+        return os.path.join(dirname, '..', 'asdf-standard', 'schemas')
 
     # Otherwise, we return the installed location
     return os.path.join(dirname, 'schemas')
