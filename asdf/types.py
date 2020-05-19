@@ -12,6 +12,7 @@ from copy import copy
 from . import tagged
 from . import util
 from .versioning import AsdfVersion, AsdfSpec
+from .exceptions import AsdfWarning
 
 
 __all__ = ['format_tag', 'CustomType']
@@ -146,7 +147,6 @@ class ExtensionTypeMeta(type):
                     new_attrs = copy(attrs)
                     new_attrs['version'] = version
                     new_attrs['supported_versions'] = set()
-                    new_attrs['_latest_version'] = cls.version
                     siblings.append(
                        ExtensionTypeMeta. __new__(mcls, name, bases, new_attrs))
             setattr(cls, '__versioned_siblings', siblings)
@@ -332,7 +332,8 @@ class ExtensionType:
                     "Failed to add subclass attribute(s) to node that is "
                     "not an object (is a {}). No subclass attributes are being "
                     "added (tag={}, subclass={})".format(
-                        type(obj).__name__, cls, node_cls)
+                        type(obj).__name__, cls, node_cls),
+                    AsdfWarning
                 )
 
         return tagged.tag_object(cls.yaml_tag, obj, ctx=ctx)

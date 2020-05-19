@@ -167,7 +167,7 @@ class AsdfInFits(asdf.AsdfFile):
 
     @classmethod
     def open(cls, fd, uri=None, validate_checksums=False, extensions=None,
-             ignore_version_mismatch=True, ignore_unrecognized_tag=False,
+             ignore_version_mismatch=None, ignore_unrecognized_tag=False,
              strict_extension_check=False, ignore_missing_extensions=False,
              validate_on_read=True):
         """Creates a new AsdfInFits object based on given input data
@@ -194,7 +194,9 @@ class AsdfInFits(asdf.AsdfFile):
             more information.
 
         ignore_version_mismatch : bool, optional
-            When `True`, do not raise warnings for mismatched schema versions.
+            Deprecated, to be removed in asdf 3.0.  When `True`, do not
+            raise warnings for mismatched schema versions.
+            Defaults to `False`.
 
         strict_extension_check : bool, optional
             When `True`, if the given ASDF file contains metadata about the
@@ -223,7 +225,7 @@ class AsdfInFits(asdf.AsdfFile):
 
     @classmethod
     def _open_impl(cls, fd, uri=None, validate_checksums=False, extensions=None,
-             ignore_version_mismatch=True, ignore_unrecognized_tag=False,
+             ignore_version_mismatch=None, ignore_unrecognized_tag=False,
              strict_extension_check=False, _extension_metadata=None,
              ignore_missing_extensions=False, validate_on_read=True):
 

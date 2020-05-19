@@ -18,7 +18,7 @@ from asdf import extension
 from asdf import resolver
 from asdf import schema
 from asdf import versioning
-from asdf.exceptions import AsdfDeprecationWarning
+from asdf.exceptions import AsdfDeprecationWarning, AsdfWarning
 from .helpers import assert_tree_match, assert_roundtrip_tree, display_warnings, yaml_to_asdf
 
 
@@ -310,9 +310,8 @@ def test_extension_version_check(installed, extension, warns):
     }
 
     if warns:
-        with pytest.warns(UserWarning) as w:
+        with pytest.warns(AsdfWarning, match="File 'test.asdf' was created with"):
             af._check_extensions(tree)
-        assert str(w[0].message).startswith("File 'test.asdf' was created with")
 
         with pytest.raises(RuntimeError) as err:
             af._check_extensions(tree, strict=True)

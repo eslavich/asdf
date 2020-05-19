@@ -16,7 +16,7 @@ from asdf import types
 from asdf import util
 from asdf import yamlutil
 from asdf.tests import helpers, CustomExtension
-
+from asdf.exceptions import AsdfWarning
 
 class TagReferenceType(types.CustomType):
     """
@@ -508,15 +508,9 @@ def test_read_large_literal():
 
     buff = helpers.yaml_to_asdf(yaml)
 
-    with pytest.warns(UserWarning) as w:
+    with pytest.warns(AsdfWarning, match='Invalid integer literal value') as w:
         with asdf.open(buff) as af:
             assert af['integer'] == value
-
-        # We get two warnings: one for validation time, and one when defaults
-        # are filled. It seems like we could improve this architecture, though...
-        assert len(w) == 2
-        assert str(w[0].message).startswith('Invalid integer literal value')
-        assert str(w[1].message).startswith('Invalid integer literal value')
 
 
 def test_nested_array():

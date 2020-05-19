@@ -13,6 +13,7 @@ from asdf import types
 from asdf import extension
 from asdf import util
 from asdf import versioning
+from asdf.exceptions import AsdfConversionWarning, AsdfDeprecationWarning, AsdfWarning
 
 from . import helpers, CustomTestType, CustomExtension
 
@@ -179,52 +180,38 @@ a: !core/complex-42.0.0
   0j
     """
 
+    # Should see the warning by default
     buff = helpers.yaml_to_asdf(yaml)
-    with pytest.warns(None) as warning:
-        with asdf.open(buff, ignore_version_mismatch=False) as ff:
-            assert isinstance(ff.tree['a'], complex)
-
-    assert len(warning) == 1
-    assert str(warning[0].message) == (
-        "'tag:stsci.edu:asdf/core/complex' with version 42.0.0 found in file, "
-        "but latest supported version is 1.0.0")
-
-    # Make sure warning is repeatable
-    buff.seek(0)
-    with pytest.warns(None) as warning:
-        with asdf.open(buff, ignore_version_mismatch=False) as ff:
-            assert isinstance(ff.tree['a'], complex)
-
-    assert len(warning) == 1
-    assert str(warning[0].message) == (
-        "'tag:stsci.edu:asdf/core/complex' with version 42.0.0 found in file, "
-        "but latest supported version is 1.0.0")
-
-    # Make sure the warning does not occur if it is being ignored (default)
-    buff.seek(0)
-    with pytest.warns(None) as warning:
+    with pytest.warns(AsdfConversionWarning, match="tag:stsci.edu:asdf/core/complex-42.0.0"):
         with asdf.open(buff) as ff:
             assert isinstance(ff.tree['a'], complex)
 
-    assert len(warning) == 0, helpers.display_warnings(warning)
-
-
-    # If the major and minor match, there should be no warning.
-    yaml = """
-a: !core/complex-1.0.1
-  0j
-    """
-
-    buff = helpers.yaml_to_asdf(yaml)
-    with pytest.warns(None) as warning:
-        with asdf.open(buff, ignore_version_mismatch=False) as ff:
+    # Make sure warning is repeatable
+    buff.seek(0)
+    with pytest.warns(AsdfConversionWarning, match="tag:stsci.edu:asdf/core/complex-42.0.0"):
+        with asdf.open(buff) as ff:
             assert isinstance(ff.tree['a'], complex)
 
-    assert len(warning) == 0
+    # Make sure the warning does not occur if it is being ignored,
+    # but we should still see the deprecation warning when we use
+    # that option.
+    buff.seek(0)
+    with pytest.warns(AsdfDeprecationWarning, match="'ignore_version_mismatch' parameter is deprecated") as recorded_warnings:
+        with asdf.open(buff, ignore_version_mismatch=True) as ff:
+            assert isinstance(ff.tree['a'], complex)
+
+    assert all(not isinstance(w.message, AsdfConversionWarning) for w in recorded_warnings)
+
+    # If we explicitly enable warnings, we should see both the
+    # deprecation warning and the conversion warning.
+    buff.seek(0)
+    with pytest.warns(None) as recorded_warnings:
+        with asdf.open(buff, ignore_version_mismatch=False) as ff:
+            assert isinstance(ff.tree['a'], complex)
+    assert any(isinstance(w.message, AsdfDeprecationWarning) for w in recorded_warnings)
+    assert any(isinstance(w.message, AsdfConversionWarning) for w in recorded_warnings)
 
 
-@pytest.mark.skipif(sys.platform.startswith('win'),
-    reason='Avoid path manipulation on Windows')
 def test_version_mismatch_file(tmpdir):
     testfile = os.path.join(str(tmpdir), 'mismatch.asdf')
     yaml = """
@@ -236,51 +223,10 @@ a: !core/complex-42.0.0
     with open(testfile, 'wb') as handle:
         handle.write(buff.read())
 
-    with pytest.warns(None) as w:
-        with asdf.open(testfile, ignore_version_mismatch=False) as ff:
+    with pytest.warns(AsdfConversionWarning, match="tag:stsci.edu:asdf/core/complex-42.0.0"):
+        with asdf.open(testfile) as ff:
             assert ff._fname == "file://{}".format(testfile)
             assert isinstance(ff.tree['a'], complex)
-
-    assert len(w) == 1
-    assert str(w[0].message) == (
-        "'tag:stsci.edu:asdf/core/complex' with version 42.0.0 found in file "
-        "'file://{}', but latest supported version is 1.0.0".format(testfile))
-
-
-def test_version_mismatch_with_supported_versions():
-    """Make sure that defining the supported_versions field does not affect
-    whether or not schema mismatch warnings are triggered."""
-
-    class CustomFlow:
-        pass
-
-    class CustomFlowType(CustomTestType):
-        version = '1.1.0'
-        supported_versions = ['1.0.0', '1.1.0']
-        name = 'custom_flow'
-        organization = 'nowhere.org'
-        standard = 'custom'
-        types = [CustomFlow]
-
-    class CustomFlowExtension(CustomExtension):
-        @property
-        def types(self):
-            return [CustomFlowType]
-
-    yaml = """
-flow_thing:
-  !<tag:nowhere.org:custom/custom_flow-1.0.0>
-    c: 100
-    d: 3.14
-"""
-    buff = helpers.yaml_to_asdf(yaml)
-    with pytest.warns(None) as w:
-        asdf.open(buff, ignore_version_mismatch=False,
-            extensions=CustomFlowExtension())
-    assert len(w) == 1, helpers.display_warnings(w)
-    assert str(w[0].message) == (
-        "'tag:nowhere.org:custom/custom_flow' with version 1.0.0 found in "
-        "file, but latest supported version is 1.1.0")
 
 
 def test_versioned_writing(monkeypatch):
@@ -488,15 +434,9 @@ flow_thing:
     b: 3.14
 """
     old_buff = helpers.yaml_to_asdf(old_yaml)
-    with pytest.warns(None) as warning:
+    with pytest.warns(AsdfConversionWarning, match="Failed to convert.*tag:nowhere.org:custom/custom_flow-1.0.0"):
         asdf.open(old_buff, extensions=CustomFlowExtension())
 
-    assert len(warning) == 1, helpers.display_warnings(warning)
-    # We expect this warning since it will not be possible to convert version
-    # 1.0.0 of CustomFlow to a CustomType (by design, for testing purposes).
-    assert str(warning[0].message).startswith(
-        "Failed to convert "
-        "tag:nowhere.org:custom/custom_flow-1.0.0 to custom type")
 
 def test_incompatible_version_check():
     class TestType0(types.CustomType):
@@ -631,13 +571,13 @@ flow_thing:
 """
     buff = helpers.yaml_to_asdf(yaml)
 
-    with pytest.warns(None) as _warnings:
+    with pytest.warns(None) as recorded_warnings:
         asdf.open(buff, extensions=CustomFlowExtension())
 
-    assert len(_warnings) == 1
-    assert str(_warnings[0].message) == (
-        "Version 1.1.0 of tag:nowhere.org:custom/custom_flow is not compatible "
-        "with any existing tag implementations")
+    assert len(recorded_warnings) == 2, helpers.display_warnings(recorded_warnings)
+    assert "tag:nowhere.org:custom/custom_flow-1.1.0" in str(recorded_warnings[0].message)
+    assert "is not compatible with any existing tag implementations" in str(recorded_warnings[1].message)
+
 
 def test_extension_override(tmpdir):
 
@@ -724,23 +664,14 @@ def test_tag_without_schema(tmpdir):
     foo = FooType('hello', 42)
     tree = dict(foo=foo)
 
-    with pytest.warns(UserWarning) as w:
+    with pytest.warns(AsdfWarning, match="tag:stsci.edu:asdf/foo-1.0.0"):
         with asdf.AsdfFile(tree, extensions=FooExtension()) as af:
             af.write_to(tmpfile)
-        # There are three validation passes when writing. Eventually this may
-        # change
-        assert len(w) == 3, helpers.display_warnings(w)
-        assert str(w[0].message).startswith('Unable to locate schema file')
-        assert str(w[1].message).startswith('Unable to locate schema file')
-        assert str(w[2].message).startswith('Unable to locate schema file')
 
-    with pytest.warns(UserWarning) as w:
+    with pytest.warns(AsdfWarning, match="tag:stsci.edu:asdf/foo-1.0.0"):
         with asdf.AsdfFile(tree, extensions=FooExtension()) as ff:
             assert isinstance(ff.tree['foo'], FooType)
             assert ff.tree['foo'] == tree['foo']
-        # There is only one validation pass when writing.
-        assert len(w) == 1, helpers.display_warnings(w)
-        assert str(w[0].message).startswith('Unable to locate schema file')
 
 
 def test_subclass_decorator(tmpdir):
@@ -888,11 +819,9 @@ def test_subclass_decorator_warning():
 
     tree = dict(fraction=MyFraction(7, 9, custom='TESTING!'))
 
-    with pytest.warns(UserWarning) as w:
+    with pytest.warns(AsdfWarning, match="Failed to add subclass attribute"):
         with asdf.AsdfFile(tree, extensions=FractionExtension()):
             pass
-        assert len(w) == 1, helpers.display_warnings(w)
-        assert str(w[0].message).startswith("Failed to add subclass attribute(s)")
 
 
 def test_custom_reference_cycle(tmpdir):
