@@ -11,7 +11,7 @@ class SchemaStandard:
         with open(path) as f:
             standard = yaml.safe_load(f.read())
 
-        self.schema_ids = set(standard["schema_ids"])
+        self.tags = set(standard["tags"])
 
     @property
     def version(self):
@@ -33,7 +33,7 @@ class SchemaStandardIndex:
                 standard.version > self._latest_standards_by_name[standard.name].version):
                 self._latest_standards_by_name[standard.name] = standard
 
-    def get_schema_ids(self, override_standard_ids=None):
+    def get_tags(self, override_standard_ids=None):
         override_standards_by_name = {}
         if override_standard_ids is not None:
             for standard_id in override_standard_ids:
@@ -53,8 +53,8 @@ class SchemaStandardIndex:
             else:
                 standards.append(standard)
 
-        schema_ids = set()
+        tags = set()
         for standard in standards:
-            schema_ids.update(standard.schema_ids)
+            tags.update(standard.tags)
 
-        return schema_ids
+        return tags

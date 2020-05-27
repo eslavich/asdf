@@ -6,11 +6,9 @@ from .versioning import AsdfVersion
 
 class AsdfMapperMeta(type):
     def __new__(mcls, name, bases, attrs):
-        if "schema_ids" in attrs:
-            schema_ids = set(attrs["schema_ids"])
-            if any(schema_id.startswith("tag:") for schema_id in schema_ids):
-                raise ValueError(f"Class '{name}' schema_ids must not be tags")
-            attrs["schema_ids"] = schema_ids
+        if "tags" in attrs:
+            tags = set(attrs["tags"])
+            attrs["tags"] = schema_ids
 
         if "types" in attrs:
             types = set(attrs["types"])
@@ -22,20 +20,20 @@ class AsdfMapperMeta(type):
 
 
 class AsdfMapper(metaclass=AsdfMapperMeta):
-    schema_ids = set()
+    tags = set()
     types = set()
 
     @classmethod
     def create_mappers(cls, extension):
-        return [cls(extension, schema_id) for schema_id in cls.schema_ids]
+        return [cls(extension, tag) for tag in cls.tags]
 
-    def __init__(self, extension, schema_id):
+    def __init__(self, extension, tag):
         self.extension = extension
-        self.schema_id = schema_id
+        self.tag = tag
 
     @property
     def version(self):
-        return AsdfVersion(self.schema_id.rsplit("-", 1)[-1])
+        return AsdfVersion(self.tag.rsplit("-", 1)[-1])
 
     def to_tree(self, obj, ctx):
         raise NotImplementedError("AsdfMapper subclasses must implement to_tree")
@@ -61,41 +59,40 @@ class AsdfMapper(metaclass=AsdfMapperMeta):
         if isinstance(node, tagged.Tagged):
             return node
         else:
-            return tagged.tag_object(self.schema_id, node, ctx=ctx)
+            return tagged.tag_object(self.tag, node, ctx=ctx)
 
 
 class MapperIndex:
     def __init__(self, standard_index, mappers):
         self._standard_index = standard_index
-        self._mappers_by_schema_id = {}
-        self._mappers_by_type_by_schema_id = {}
+        self._mappers_by_tag = {}
+        self._mappers_by_type_by_tag = {}
 
         for mapper in mappers:
-            if mapper.schema_id in self._mappers_by_schema_id:
-                other_mapper = self._mappers_by_schema_id[mapper.schema_id]
+            if mapper.tag in self._mappers_by_tag:
+                other_mapper = self._mappers_by_tag[mapper.tag]
                 message = (
-                    f"Mapper for schema id '{mapper.schema_id}' provided by both "
+                    f"Mapper for tag '{mapper.tag}' provided by both "
                     f"{type(other_mapper.extension).__name__} and {type(mapper.extension).__name__}. "
                     "Please deselect one of the conflicting extensions."
                 )
                 raise ValueError(message)
-            self._mappers_by_schema_id[mapper.schema_id] = mapper
+            self._mappers_by_tag[mapper.tag] = mapper
 
             for typ in mapper.types:
-                if typ not in self._mappers_by_type_by_schema_id:
-                    self._mappers_by_type_by_schema_id[typ] = {}
+                if typ not in self._mappers_by_type_by_tag:
+                    self._mappers_by_type_by_tag[typ] = {}
 
-                self._mappers_by_type_by_schema_id[typ][mapper.schema_id] = mapper
+                self._mappers_by_type_by_tag[typ][mapper.tag] = mapper
 
-
-    def from_schema_id(self, schema_id):
-        return self._mappers_by_schema_id.get(schema_id)
+    def from_tag(self, tag):
+        return self._mappers_by_tag.get(tag)
 
     def from_type(self, type):
-        result = self._mappers_by_type_by_schema_id.get(type, {})
-        schema_ids = set(result.keys())
+        result = self._mappers_by_type_by_tag.get(type, {})
+        tags = set(result.keys())
         # TODO: This should be overridable with standards set on the AsdfFile:
-        intersection = schema_ids.intersection(self._standard_index.get_schema_ids())
+        intersection = tags.intersection(self._standard_index.get_tags())
         if len(intersection) == 0:
             return None
         elif len(intersection) == 1:

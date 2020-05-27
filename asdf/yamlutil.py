@@ -255,7 +255,7 @@ def tagged_tree_to_custom_tree(tree, ctx, force_raw_types=False):
         if tag is None:
             return node
 
-        mapper = ctx.mapper_index.from_schema_id(tag)
+        mapper = ctx.mapper_index.from_tag(tag)
         if mapper is not None:
             return mapper.from_tree(node, ctx)
 
