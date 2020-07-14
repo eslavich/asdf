@@ -8,6 +8,7 @@ import copy
 
 from . import entry_points
 from .resource import ResourceManager
+from .extension import ExtensionProxy
 
 
 DEFAULT_VALIDATE_ON_READ = True
@@ -24,10 +25,14 @@ class AsdfConfig:
         self,
         resource_mappings=None,
         resource_manager=None,
+        extensions=None,
+        enabled_extensions=None,
         validate_on_read=None,
     ):
         self._resource_mappings = resource_mappings
         self._resource_manager = resource_manager
+        self._extensions = extensions
+        self._enabled_extensions = enabled_extensions
 
         if validate_on_read is None:
             self._validate_on_read = DEFAULT_VALIDATE_ON_READ
@@ -39,7 +44,7 @@ class AsdfConfig:
     @property
     def resource_mappings(self):
         """
-        Get the list of enabled resource Mapping instances.  Unless
+        Get the list of resource Mapping instances.  Unless
         overridden by user configuration, this includes every Mapping
         registered with an entry point.
 
@@ -55,7 +60,7 @@ class AsdfConfig:
 
     def add_resource_mapping(self, mapping):
         """
-        Register a new resource Mapping.
+        Add a new resource Mapping.
 
         Parameters
         ----------
@@ -70,7 +75,7 @@ class AsdfConfig:
 
     def remove_resource_mapping(self, mapping):
         """
-        Remove a registered resource mapping.
+        Remove a resource mapping.
 
         Parameters
         ----------
@@ -83,7 +88,7 @@ class AsdfConfig:
 
     def reset_resources(self):
         """
-        Reset registered resource mappings to the default list
+        Reset resource mappings to the default list
         provided as entry points.
         """
         with self._lock:
@@ -105,6 +110,37 @@ class AsdfConfig:
                 if self._resource_manager is None:
                     self._resource_manager = ResourceManager(self.resource_mappings)
         return self._resource_manager
+
+    @property
+    def extensions(self):
+        """
+        Get the list of installed `AsdfExtension` instances.
+
+        Returns
+        -------
+        list of asdf.AsdfExtension
+        """
+        if self._extensions is None:
+            with self._lock:
+                if self._extensions is None:
+                    self._extensions = [ExtensionProxy(e) for e in entry_points.get_extensions()]
+        return self._extensions
+
+    @property
+    def enabled_extensions(self):
+        """
+        Get the list of `AsdfExtension` instances that are
+        are enabled by default for new files.
+
+        Returns
+        -------
+        list of asdf.AsdfExtension
+        """
+        if self._enabled_extensions is None:
+            with self._lock:
+                if self._enabled_extensions is None:
+                    self._enabled_extensions = [e for e in self.extensions if e.default_enabled]
+        return self._enabled_extensions
 
     @property
     def validate_on_read(self):

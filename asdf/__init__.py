@@ -13,6 +13,7 @@ __all__ = [
     'AsdfFile', 'CustomType', 'AsdfExtension', 'Stream', 'open', 'test',
     'commands', 'IntegerType', 'ExternalArrayReference', 'info', '__version__',
     '__githash__', 'ValidationError', 'get_config', 'config_context',
+    'AsdfConverter',
 ]
 
 
@@ -25,6 +26,7 @@ from .tags.core import IntegerType
 from .tags.core.external_reference import ExternalArrayReference
 from ._convenience import info
 from ._config import get_config, config_context
+from ._converter import AsdfConverter
 
 from jsonschema import ValidationError
 

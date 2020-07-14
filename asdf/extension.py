@@ -9,6 +9,7 @@ from .util import get_class_name
 from .type_index import AsdfTypeIndex
 from .version import version as asdf_version
 from .exceptions import AsdfDeprecationWarning, AsdfWarning
+from ._converter import ConverterProxy
 
 
 __all__ = ['AsdfExtension', 'AsdfExtensionList']
@@ -17,28 +18,64 @@ __all__ = ['AsdfExtension', 'AsdfExtensionList']
 ASDF_TEST_BUILD_ENV = 'ASDF_TEST_BUILD'
 
 
-class AsdfExtension(metaclass=abc.ABCMeta):
+class AsdfExtension(abc.ABC):
     """
     Abstract base class defining an extension to ASDF.
     """
     @classmethod
     def __subclasshook__(cls, C):
         if cls is AsdfExtension:
-            return (hasattr(C, 'types') and
-                    hasattr(C, 'tag_mapping'))
+            return (
+                hasattr(C, 'types') and hasattr(C, 'tag_mapping') or
+                hasattr(C, 'extension_uri')
+            )
         return NotImplemented
 
-    @abc.abstractproperty
+    @property
+    def extension_uri(self):
+        """
+        Get this extension's identifying URI.  New-style `AsdfExtension`
+        implementations (those that define the `converters` property)
+        must define a URI.
+
+        Returns
+        -------
+        str
+        """
+        return None
+
+    @property
+    def default_enabled(self):
+        """
+        Return `True` if this extension should be enabled by default.
+        Typically extension packages will enable only the latest
+        version of the extension.
+
+        Returns
+        -------
+        bool
+        """
+        return True
+
+    @property
     def types(self):
         """
+        DEPRECATED.  This property will be ignored in asdf 3.0.
+        Support for custom types can be provided via the `converters`
+        property.
+
         A list of `asdf.CustomType` subclasses that describe how to store
         custom objects to and from ASDF.
         """
-        pass
+        return []
 
-    @abc.abstractproperty
+    @property
     def tag_mapping(self):
         """
+        DEPRECATED.  This property will be ignored in asdf 3.0.
+        The mapping of tag to schema URI is now defined on each
+        individual `AsdfConverter` instance.
+
         A list of 2-tuples or callables mapping YAML tag prefixes to JSON Schema
         URL prefixes.
 
@@ -67,8 +104,9 @@ class AsdfExtension(metaclass=abc.ABCMeta):
            return [('tag:nowhere.org:custom/',
                     'http://nowhere.org/schemas/custom/{tag_suffix}')]
         """
-        pass
+        return []
 
+    @property
     def url_mapping(self):
         """
         DEPRECATED.  This property will be ignored in asdf 3.0.
@@ -105,6 +143,63 @@ class AsdfExtension(metaclass=abc.ABCMeta):
                    )]
         """
         return []
+
+    @property
+    def converters(self):
+        """
+        Iterable of `AsdfConverter` instances that support new tags
+        provided by this extension.
+
+        Returns
+        -------
+        iterable of asdf.AsdfConverter
+        """
+        return []
+
+
+class ExtensionProxy(AsdfExtension):
+    """
+    Proxy that wraps an `AsdfExtension` and provides default
+    implementations of optional methods.
+    """
+    def __init__(self, delegate):
+        self._delegate = delegate
+
+    @property
+    def extension_uri(self):
+        return getattr(self._delegate, "extension_uri", None)
+
+    @property
+    def converters(self):
+        converters = getattr(self._delegate, "converters", [])
+        return [ConverterProxy(c, self) for c in converters]
+
+    @property
+    def types(self):
+        return getattr(self._delegate, "types", [])
+
+    @property
+    def tag_mapping(self):
+        return getattr(self._delegate, "tag_mapping", [])
+
+    @property
+    def url_mapping(self):
+        return getattr(self._delegate, "url_mapping", [])
+
+    @property
+    def default_enabled(self):
+        return getattr(self._delegate, "default_enabled", True)
+
+    @property
+    def delegate(self):
+        return self._delegate
+
+    # TODO: __repr__
+
+    @property
+    def fully_qualified_class_name(self):
+        delegate = self._delegate
+        return delegate.__class__.__module__ + "." + delegate.__class__.__qualname__
 
 
 class AsdfExtensionList:
