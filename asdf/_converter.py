@@ -6,6 +6,9 @@ types.  Will eventually replace the `asdf.types` and
 import abc
 import collections
 import warnings
+from types import GeneratorType
+
+from . import tagged
 
 
 __all__ = []
@@ -53,7 +56,7 @@ class AsdfConverter(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def to_yaml_tree(self, obj):
+    def to_yaml_tree(self, obj, tag_or_tags, ctx):
         """
         Convert an object into an object tree suitable for YAML serialization.
         This method is not responsible for writing actual YAML; rather, it
@@ -76,6 +79,8 @@ class AsdfConverter(abc.ABC):
             Instance of a custom type to be serialized.  Guaranteed to
             be an instance of one of the types listed in the `types`
             property.
+        tag_or_tags : str or set of str
+            Tag that the
         ctx : asdf.AsdfFile, optional
             If the implementation of this method accepts a second argument,
             it will receive the `asdf.AsdfFile` associated with obj.
@@ -91,7 +96,7 @@ class AsdfConverter(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def from_yaml_tree(self, tree):
+    def from_yaml_tree(self, tree, tag, ctx):
         """
         Convert a YAML subtree into an instance of a custom type.
 
@@ -182,34 +187,37 @@ class ConverterProxy(AsdfConverter):
         self._extension = extension
 
     @property
-    def tag(self):
-        return self._delegate.tag
+    def tags(self):
+        return self._delegate.tags
 
     @property
     def types(self):
         return self._delegate.types
 
-    @property
-    def to_yaml_tree(self, obj, ctx):
-        if self._delegate.to_yaml_tree.__code__.co_argcount > 1:
-            return self._delegate.to_yaml_tree(obj, ctx)
+    def to_yaml_tree(self, obj, tags, ctx):
+        if len(tags) == 1:
+            tag_or_tags = iter(tags).next()
         else:
-            return self._delegate.to_yaml_tree(obj)
+            tag_or_tags = set(tags)
 
-    @property
-    def from_yaml_tree(self, node, ctx):
-        if self._delegate.from_yaml_tree.__code__.co_argcount > 1:
-            return self._delegate.from_yaml_tree(node, ctx)
+        node = self._delegate.to_yaml_tree(obj, tag_or_tags, ctx)
+        if isinstance(node, GeneratorType):
+            generator = node
+            node = next(generator)
         else:
-            return self._delegate.to_yaml_tree(node)
+            generator = None
 
-    @property
-    def schema_uri(self):
-        return getattr(self._delegate, "schema_uri", None)
+        if not isinstance(node, tagged.Tagged):
+            if len(tags) > 1:
+                raise RuntimeError("Ambiguous tag for type {}".format(type(obj)))
+            node = tagged.tag_object(tag_or_tags, node, ctx=ctx)
 
-    @property
-    def schema(self):
-        return getattr(self._delegate, "schema", None)
+        yield node
+        if generator is not None:
+            yield from generator
+
+    def from_yaml_tree(self, node, tag, ctx):
+        return self._delegate.from_yaml_tree(node, tag, ctx)
 
     @property
     def validators(self):

@@ -18,6 +18,16 @@ __all__ = ['AsdfExtension', 'AsdfExtensionList']
 ASDF_TEST_BUILD_ENV = 'ASDF_TEST_BUILD'
 
 
+class AsdfTag(abc.ABC):
+    @abc.abstractproperty
+    def tag_uri(self):
+        pass
+
+    @abc.abstractproperty
+    def schema_uri(self):
+        pass
+
+
 class AsdfExtension(abc.ABC):
     """
     Abstract base class defining an extension to ASDF.
@@ -43,6 +53,18 @@ class AsdfExtension(abc.ABC):
         str
         """
         return None
+
+    @property
+    def tags(self):
+        """
+        Get the tags supported by this extension.
+
+        Returns
+        -------
+        iterable of AsdfTag
+        """
+
+
 
     @property
     def default_enabled(self):
@@ -200,6 +222,25 @@ class ExtensionProxy(AsdfExtension):
     def fully_qualified_class_name(self):
         delegate = self._delegate
         return delegate.__class__.__module__ + "." + delegate.__class__.__qualname__
+
+
+class ExtensionManager:
+    def __init__(self, core_extension, runtime_extension, extensions):
+        self._extensions = extensions
+
+    def get_converter_from_tag(self, tag):
+        pass
+
+    def get_converter_from_type(self, type):
+        pass
+
+    def get_schema_uri(self, tag):
+        pass
+
+    
+
+
+
 
 
 class AsdfExtensionList:

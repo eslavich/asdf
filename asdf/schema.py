@@ -291,16 +291,21 @@ def _create_validator(validators=YAML_VALIDATORS, visit_repeat_nodes=False):
                 if _schema is None:
                     tag = getattr(instance, '_tag', None)
                     if tag is not None:
-                        schema_path = self.ctx.resolver(tag)
-                        if schema_path != tag:
+                        schema_uri = self.ctx.extension_manager.get_tag_schema_uri(tag)
+                        if schema_uri is None:
+                            schema_uri = self.ctx.tag_mapping(tag)
+                            if schema_uri == tag:
+                                schema_uri = None
+
+                        if schema_uri is not None:
                             try:
-                                s = _load_schema_cached(schema_path, self.ctx.resolver, False, False)
+                                s = _load_schema_cached(schema_uri, self.ctx.resolver, False, False)
                             except FileNotFoundError:
                                 msg = "Unable to locate schema file for '{}': '{}'"
-                                warnings.warn(msg.format(tag, schema_path), AsdfWarning)
+                                warnings.warn(msg.format(tag, schema_uri), AsdfWarning)
                                 s = {}
                             if s:
-                                with self.resolver.in_scope(schema_path):
+                                with self.resolver.in_scope(schema_uri):
                                     for x in super(ASDFValidator, self).iter_errors(instance, s):
                                         yield x
 
