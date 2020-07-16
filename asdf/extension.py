@@ -20,12 +20,16 @@ ASDF_TEST_BUILD_ENV = 'ASDF_TEST_BUILD'
 
 class AsdfTag(abc.ABC):
     @abc.abstractproperty
-    def tag_uri(self):
+    def tag(self):
         pass
 
     @abc.abstractproperty
     def schema_uri(self):
         pass
+
+
+class TagProxy(AsdfTag):
+
 
 
 class AsdfExtension(abc.ABC):
@@ -61,10 +65,9 @@ class AsdfExtension(abc.ABC):
 
         Returns
         -------
-        iterable of AsdfTag
+        iterable of str or AsdfTag
         """
-
-
+        return []
 
     @property
     def default_enabled(self):
@@ -237,7 +240,7 @@ class ExtensionManager:
     def get_schema_uri(self, tag):
         pass
 
-    
+
 
 
 
