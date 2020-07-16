@@ -195,12 +195,29 @@ class AsdfExtension(abc.ABC):
         """
         return []
 
+    @property
+    def validators(self):
+        """
+        Additional schema validators to install with this extension.
+        Must return a `dict` mapping schema property names to validator
+        methods, which accept four arguments: the validator object, the
+        value of the schema property, the object to be validated, and
+        the full schema.  Validator methods are expected to raise
+        `asdf.ValidationError` on validation failure.
+
+        Returns
+        -------
+        dict
+        """
+        return {}
+
 
 class ManifestExtension(AsdfExtension):
-    def __init__(self, extension_uri, converters=None, default_enabled=False):
+    def __init__(self, extension_uri, converters=None, default_enabled=False, validators=None):
         self._extension_uri = extension_uri
         self._default_enabled = default_enabled
         self._converters = converters
+        self._validators = validators
 
         from ._config import get_config
         self._manifest = yaml.safe_load(get_config().resouce_manager[extension_uri])
@@ -229,7 +246,12 @@ class ManifestExtension(AsdfExtension):
             ))
         return result
 
+    @property
+    def validators(self):
+        return self._validators
 
+
+# TODO: add heavy-duty validation here
 class ExtensionProxy(AsdfExtension):
     """
     Proxy that wraps an `AsdfExtension` and provides default
@@ -276,6 +298,14 @@ class ExtensionProxy(AsdfExtension):
     @property
     def default_enabled(self):
         return getattr(self._delegate, "default_enabled", False)
+
+    @property
+    def validators(self):
+        result = getattr(self._delegate, "validators", {})
+        if result is None:
+            return {}
+        else:
+            return result
 
     @property
     def delegate(self):

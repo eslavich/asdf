@@ -63,9 +63,10 @@ class AsdfFile(versioning.VersionedMixin):
             automatically determined from the associated file object,
             if possible and if created from `AsdfFile.open`.
 
-        extensions : list of AsdfExtension
+        extensions : list of AsdfExtension or str
             A list of extensions to use when reading and writing ASDF files.
-            See `~asdf.types.AsdfExtension` for more information.
+            If `str`, must be an extension URI for which a single
+            `AsdfExtension` is installed.
 
         version : str, optional
             The ASDF version to use when writing out.  If not
