@@ -290,7 +290,7 @@ class ExtensionManager:
         if len(disable_extensions) > 0:
             warnings.warn(
                 "The following extensions conflict in their support for "
-                "types, tags, or both: \n\n{}\n\n"
+                "Python types, YAML tags, or both: \n\n{}\n\n"
                 "They will all be ignored.  Disable the unneeded extensions "
                 "with asdf.get_config().disable_extension(...) to allow the "
                 "others to be used.".format("\n".join(repr(e) for e in disable_extensions)),
@@ -303,36 +303,28 @@ class ExtensionManager:
         self._converters_by_tag = {}
         self._tag_descriptions_by_tag = {}
 
-        for extension in extensions:
+        for extension in self._extensions:
             for converter in extension.converters:
                 for typ in converter.types:
-                     converters_by_type[typ] = converter
+                     self._converters_by_type[typ] = converter
                 for tag in converter.tags:
-                    converters_by_tag[tag] = converter
+                    self._converters_by_tag[tag] = converter
             for tag_desc in extension.tag_descriptions:
-                extensions_by_tag[tag_desc.tag_uri].append(extension)
+                self._tag_descriptions_by_tag[tag_desc.tag_uri] = tag_desc
 
+    def get_tag_schema_uri(self, tag):
+        tag_description = self._tag_descriptions_by_tag.get(tag)
+        if tag_description is None:
+            # TODO: warn missing tag?
+            return None
+        else:
+            return tag_description.schema_uri
 
+    def get_converter_for_tag(self, tag):
+        return self._converters_by_tag.get(tag)
 
-
-
-
-    def get_tag_schema_uri(self, tag_uri):
-
-
-    def get_converter_from_tag(self, tag):
-        pass
-
-    def get_converter_from_type(self, type):
-        pass
-
-    def get_schema_uri(self, tag):
-        pass
-
-
-
-
-
+    def get_converter_for_type(self, type):
+        return self._converters_by_type.get(type)
 
 
 class AsdfExtensionList:
