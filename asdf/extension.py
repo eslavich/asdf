@@ -4,6 +4,8 @@ import warnings
 from pkg_resources import iter_entry_points
 from collections import defaultdict
 
+import yaml
+
 from . import types
 from . import resolver
 from .util import get_class_name
@@ -92,7 +94,7 @@ class AsdfExtension(abc.ABC):
         -------
         bool
         """
-        return True
+        return False
 
     @property
     def types(self):
@@ -194,13 +196,48 @@ class AsdfExtension(abc.ABC):
         return []
 
 
+class ManifestExtension(AsdfExtension):
+    def __init__(self, extension_uri, converters=None, default_enabled=False):
+        self._extension_uri = extension_uri
+        self._default_enabled = default_enabled
+        self._converters = converters
+
+        from ._config import get_config
+        self._manifest = yaml.safe_load(get_config().resouce_manager[extension_uri])
+
+    @property
+    def extension_uri(self):
+        return self._extension_uri
+
+    @property
+    def default_enabled(self):
+        return self._default_enabled
+
+    @property
+    def converters(self):
+        return self._converters
+
+    @property
+    def tags(self):
+        result = []
+        for tag in self._manifest.get("tags", []):
+            result.append(AsdfTagDescription(
+                tag["tag_uri"],
+                schema_uri=tag.get("schema_uri"),
+                title=tag.get("title"),
+                description=tag.get("description"),
+            ))
+        return result
+
+
 class ExtensionProxy(AsdfExtension):
     """
     Proxy that wraps an `AsdfExtension` and provides default
     implementations of optional methods.
     """
-    def __init__(self, delegate):
+    def __init__(self, delegate, legacy=False):
         self._delegate = delegate
+        self._legacy = legacy
 
     @property
     def extension_uri(self):
@@ -238,11 +275,15 @@ class ExtensionProxy(AsdfExtension):
 
     @property
     def default_enabled(self):
-        return getattr(self._delegate, "default_enabled", True)
+        return getattr(self._delegate, "default_enabled", False)
 
     @property
     def delegate(self):
         return self._delegate
+
+    @property
+    def legacy(self):
+        return self._legacy
 
     # TODO: __repr__
 
@@ -255,7 +296,7 @@ class ExtensionProxy(AsdfExtension):
 
 
 class ExtensionManager:
-    def __init__(self, core_extension, runtime_extension, extensions):
+    def __init__(self, extensions):
         extensions = [ExtensionProxy(e) for e in extensions]
 
         converters_by_type = defaultdict(list)
