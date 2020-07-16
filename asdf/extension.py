@@ -2,6 +2,7 @@ import os
 import abc
 import warnings
 from pkg_resources import iter_entry_points
+from collections import defaultdict
 
 from . import types
 from . import resolver
@@ -18,18 +19,28 @@ __all__ = ['AsdfExtension', 'AsdfExtensionList']
 ASDF_TEST_BUILD_ENV = 'ASDF_TEST_BUILD'
 
 
-class AsdfTag(abc.ABC):
-    @abc.abstractproperty
-    def tag(self):
-        pass
+class AsdfTagDescription:
+    def __init__(self, tag_uri, schema_uri=None, title=None, description=None):
+        self._tag_uri = tag_uri
+        self._schema_uri = schema_uri
+        self._title = title
+        self._description = description
 
-    @abc.abstractproperty
+    @property
+    def tag_uri(self):
+        return self._tag_uri
+
+    @property
     def schema_uri(self):
-        pass
+        return self._schema_uri
 
+    @property
+    def title(self):
+        return self._title
 
-class TagProxy(AsdfTag):
-
+    @property
+    def description(self):
+        return self._description
 
 
 class AsdfExtension(abc.ABC):
@@ -65,7 +76,8 @@ class AsdfExtension(abc.ABC):
 
         Returns
         -------
-        iterable of str or AsdfTag
+        iterable of str or AsdfTagDescription
+            If str, the tag URI value.
         """
         return []
 
@@ -212,6 +224,19 @@ class ExtensionProxy(AsdfExtension):
         return getattr(self._delegate, "url_mapping", [])
 
     @property
+    def tag_descriptions(self):
+        result = []
+        for tag in getattr(self._delegate, "tags", []):
+            if isinstance(tag, str):
+                result.append(AsdfTagDescription(tag))
+            elif isinstance(tag, AsdfTagDescription):
+                result.append(tag)
+            else:
+                # TODO: Error should mention the extension's package name
+                raise TypeError("Extension tags value must be str or AsdfTagDescription")
+        return result
+
+    @property
     def default_enabled(self):
         return getattr(self._delegate, "default_enabled", True)
 
@@ -221,6 +246,8 @@ class ExtensionProxy(AsdfExtension):
 
     # TODO: __repr__
 
+    # TODO: Need to know the package name
+
     @property
     def fully_qualified_class_name(self):
         delegate = self._delegate
@@ -229,7 +256,69 @@ class ExtensionProxy(AsdfExtension):
 
 class ExtensionManager:
     def __init__(self, core_extension, runtime_extension, extensions):
-        self._extensions = extensions
+        extensions = [ExtensionProxy(e) for e in extensions]
+
+        converters_by_type = defaultdict(list)
+        converters_by_tag = defaultdict(list)
+        extensions_by_tag = defaultdict(list)
+
+        for extension in extensions:
+            for converter in extension.converters:
+                for typ in converter.types:
+                     converters_by_type[typ].append(converter)
+                for tag in converter.tags:
+                    converters_by_tag[tag].append(converter)
+            for tag_desc in extension.tag_descriptions:
+                extensions_by_tag[tag_desc.tag_uri].append(extension)
+
+        disable_extensions = set()
+
+        for typ, converters in converters_by_type.items():
+            if len(converters) > 1:
+                for c in converters:
+                    disable_extensions.add(c.extension)
+
+        for tag, converters in converters_by_tag.items():
+            if len(converters) > 1:
+                for c in converters:
+                    disable_extensions.add(c.extension)
+
+        for tag, tag_extensions in extensions_by_tag.items():
+            if len(tag_extensions) > 1:
+                disable_extensions.add(tag_extensions)
+
+        if len(disable_extensions) > 0:
+            warnings.warn(
+                "The following extensions conflict in their support for "
+                "types, tags, or both: \n\n{}\n\n"
+                "They will all be ignored.  Disable the unneeded extensions "
+                "with asdf.get_config().disable_extension(...) to allow the "
+                "others to be used.".format("\n".join(repr(e) for e in disable_extensions)),
+                AsdfWarning
+
+            )
+
+        self._extensions = [e for e in extensions if e not in disable_extensions]
+        self._converters_by_type = {}
+        self._converters_by_tag = {}
+        self._tag_descriptions_by_tag = {}
+
+        for extension in extensions:
+            for converter in extension.converters:
+                for typ in converter.types:
+                     converters_by_type[typ] = converter
+                for tag in converter.tags:
+                    converters_by_tag[tag] = converter
+            for tag_desc in extension.tag_descriptions:
+                extensions_by_tag[tag_desc.tag_uri].append(extension)
+
+
+
+
+
+
+    def get_tag_schema_uri(self, tag_uri):
+
 
     def get_converter_from_tag(self, tag):
         pass
