@@ -3,9 +3,11 @@ import abc
 import warnings
 from pkg_resources import iter_entry_points
 from collections import defaultdict
+from types import GeneratorType
 
 import yaml
 
+from . import tagged
 from . import types
 from . import resolver
 from .util import get_class_name
@@ -72,18 +74,6 @@ class AsdfExtension(abc.ABC):
         return None
 
     @property
-    def tags(self):
-        """
-        Get the tags supported by this extension.
-
-        Returns
-        -------
-        iterable of str or AsdfTagDescription
-            If str, the tag URI value.
-        """
-        return []
-
-    @property
     def default_enabled(self):
         """
         Return `True` if this extension should be enabled by default.
@@ -94,7 +84,31 @@ class AsdfExtension(abc.ABC):
         -------
         bool
         """
-        return False
+        return True
+
+    @property
+    def tags(self):
+        """
+        Get the tags introduced by this extension.
+
+        Returns
+        -------
+        iterable of str or AsdfTagDescription
+            If str, the tag URI value.
+        """
+        return []
+
+    @property
+    def converters(self):
+        """
+        Iterable of `AsdfConverter` instances that support tags
+        provided by this extension.
+
+        Returns
+        -------
+        iterable of asdf.AsdfConverter
+        """
+        return []
 
     @property
     def types(self):
@@ -183,44 +197,15 @@ class AsdfExtension(abc.ABC):
         """
         return []
 
-    @property
-    def converters(self):
-        """
-        Iterable of `AsdfConverter` instances that support new tags
-        provided by this extension.
-
-        Returns
-        -------
-        iterable of asdf.AsdfConverter
-        """
-        return []
-
-    @property
-    def validators(self):
-        """
-        Additional schema validators to install with this extension.
-        Must return a `dict` mapping schema property names to validator
-        methods, which accept four arguments: the validator object, the
-        value of the schema property, the object to be validated, and
-        the full schema.  Validator methods are expected to raise
-        `asdf.ValidationError` on validation failure.
-
-        Returns
-        -------
-        dict
-        """
-        return {}
-
 
 class ManifestExtension(AsdfExtension):
-    def __init__(self, extension_uri, converters=None, default_enabled=False, validators=None):
+    def __init__(self, extension_uri, converters=None, default_enabled=False):
         self._extension_uri = extension_uri
         self._default_enabled = default_enabled
         self._converters = converters
-        self._validators = validators
 
         from ._config import get_config
-        self._manifest = yaml.safe_load(get_config().resouce_manager[extension_uri])
+        self._manifest = yaml.safe_load(get_config().resource_manager[extension_uri])
 
     @property
     def extension_uri(self):
@@ -246,9 +231,11 @@ class ManifestExtension(AsdfExtension):
             ))
         return result
 
-    @property
-    def validators(self):
-        return self._validators
+    def __repr__(self):
+        return "ManifestExtension({!r}, converters=[...], default_enabled={!r})".format(
+            self.extension_uri,
+            self.default_enabled,
+        )
 
 
 # TODO: add heavy-duty validation here
@@ -257,9 +244,20 @@ class ExtensionProxy(AsdfExtension):
     Proxy that wraps an `AsdfExtension` and provides default
     implementations of optional methods.
     """
-    def __init__(self, delegate, legacy=False):
+    @classmethod
+    def maybe_wrap(self, delegate):
+        if isinstance(delegate, ExtensionProxy):
+            return delegate
+        else:
+            return ExtensionProxy(delegate)
+
+    def __init__(self, delegate, package_name=None, package_version=None):
+        if not isinstance(delegate, AsdfExtension):
+            raise TypeError("Extension must implement the AsdfExtension interface")
+
         self._delegate = delegate
-        self._legacy = legacy
+        self._package_name = package_name
+        self._package_version = package_version
 
     @property
     def extension_uri(self):
@@ -291,111 +289,146 @@ class ExtensionProxy(AsdfExtension):
             elif isinstance(tag, AsdfTagDescription):
                 result.append(tag)
             else:
-                # TODO: Error should mention the extension's package name
-                raise TypeError("Extension tags value must be str or AsdfTagDescription")
+                raise TypeError("Extension tags values must be str or AsdfTagDescription")
         return result
 
     @property
     def default_enabled(self):
-        return getattr(self._delegate, "default_enabled", False)
-
-    @property
-    def validators(self):
-        result = getattr(self._delegate, "validators", {})
-        if result is None:
-            return {}
-        else:
-            return result
+        return getattr(self._delegate, "default_enabled", True)
 
     @property
     def delegate(self):
         return self._delegate
 
     @property
-    def legacy(self):
-        return self._legacy
-
-    # TODO: __repr__
-
-    # TODO: Need to know the package name
+    def package_name(self):
+        return self._package_name
 
     @property
-    def fully_qualified_class_name(self):
-        delegate = self._delegate
-        return delegate.__class__.__module__ + "." + delegate.__class__.__qualname__
+    def package_version(self):
+        return self._package_version
+
+    def __repr__(self):
+        return "ExtensionProxy({!r}, package_name={!r}, package_version={!r})".format(
+            self.delegate,
+            self.package_name,
+            self.package_version,
+        )
 
 
 class ExtensionManager:
     def __init__(self, extensions):
-        extensions = [ExtensionProxy(e) for e in extensions]
-
-        converters_by_type = defaultdict(list)
-        converters_by_tag = defaultdict(list)
-        extensions_by_tag = defaultdict(list)
-
-        for extension in extensions:
-            for converter in extension.converters:
-                for typ in converter.types:
-                     converters_by_type[typ].append(converter)
-                for tag in converter.tags:
-                    converters_by_tag[tag].append(converter)
-            for tag_desc in extension.tag_descriptions:
-                extensions_by_tag[tag_desc.tag_uri].append(extension)
-
-        disable_extensions = set()
-
-        for typ, converters in converters_by_type.items():
-            if len(converters) > 1:
-                for c in converters:
-                    disable_extensions.add(c.extension)
-
-        for tag, converters in converters_by_tag.items():
-            if len(converters) > 1:
-                for c in converters:
-                    disable_extensions.add(c.extension)
-
-        for tag, tag_extensions in extensions_by_tag.items():
-            if len(tag_extensions) > 1:
-                disable_extensions.add(tag_extensions)
-
-        if len(disable_extensions) > 0:
-            warnings.warn(
-                "The following extensions conflict in their support for "
-                "Python types, YAML tags, or both: \n\n{}\n\n"
-                "They will all be ignored.  Disable the unneeded extensions "
-                "with asdf.get_config().disable_extension(...) to allow the "
-                "others to be used.".format("\n".join(repr(e) for e in disable_extensions)),
-                AsdfWarning
-
-            )
-
-        self._extensions = [e for e in extensions if e not in disable_extensions]
-        self._converters_by_type = {}
-        self._converters_by_tag = {}
-        self._tag_descriptions_by_tag = {}
+        self._extensions = []
+        self._tag_descriptions_by_tag = defaultdict(list)
+        self._converters_by_tag = defaultdict(list)
+        self._converters_by_type = defaultdict(list)
+        self._tags = set()
+        self._types = set()
 
         for extension in self._extensions:
-            for converter in extension.converters:
-                for typ in converter.types:
-                     self._converters_by_type[typ] = converter
-                for tag in converter.tags:
-                    self._converters_by_tag[tag] = converter
-            for tag_desc in extension.tag_descriptions:
-                self._tag_descriptions_by_tag[tag_desc.tag_uri] = tag_desc
+            self.add_extension(extension)
+
+    def add_extension(self, extension):
+        extension = ExtensionProxy.maybe_wrap(extension)
+
+        self._extensions.append(extension)
+
+        extension_tags = set()
+        for tag_desc in extension.tag_descriptions:
+            self._tag_descriptions_by_tag[tag_desc.tag_uri].append(tag_desc)
+            extension_tags.add(tag_desc.tag_uri)
+
+        extension_types = set()
+        for converter in extension.converters:
+            for tag in converter.tags:
+                # The converters may support multiple extension versions, so
+                # only map tags that are included in the extension's tag list.
+                if tag in extension_tags:
+                    self._converters_by_tag[tag].append(converter)
+            for typ in converter.types:
+                extension_types.add(typ)
+                self._converters_by_type[typ].append(converter)
+
+        self._tags.update(extension_tags)
+        self._types.update(extension_types)
+
+    @property
+    def extensions(self):
+        return self._extensions
+
+    @property
+    def tags(self):
+        return self._tags
+
+    @property
+    def types(self):
+        return self._types
 
     def get_tag_schema_uri(self, tag):
-        tag_description = self._tag_descriptions_by_tag.get(tag)
-        if tag_description is None:
-            # TODO: warn missing tag?
+        tag_descriptions = self._tag_descriptions_by_tag.get(tag, [])
+        if len(tag_descriptions) == 0:
             return None
+        elif len(tag_descriptions) == 1:
+            return tag_descriptions[0].schema_uri
         else:
-            return tag_description.schema_uri
+            # TODO: warning
+            return tag_descriptions[0].schema_uri
+
+    def to_yaml_tree(self, obj, ctx):
+        if type(obj) not in self._types:
+            raise TypeError("Unhandled object type: {!r}".format(type(obj)))
+
+        converter = self.get_converter_for_type(type(obj))
+
+        tags = self.tags.intersection(converter.tags)
+        if len(tags) == 1:
+            tag_or_tags = iter(tags).next()
+        else:
+            tag_or_tags = tags
+
+        node = converter.to_yaml_tree(obj, tag_or_tags, ctx)
+        if isinstance(node, GeneratorType):
+            generator = node
+            node = next(generator)
+        else:
+            generator = None
+
+        if not isinstance(node, tagged.Tagged):
+            if len(tags) > 1:
+                raise RuntimeError("Ambiguous tag for type {}".format(type(obj)))
+            node = tagged.tag_object(tag_or_tags, node, ctx=ctx)
+
+        yield node
+        if generator is not None:
+            yield from generator
+
+    def from_yaml_tree(self, node, ctx):
+        if node._tag not in self.tags:
+            raise TypeError("Unhandled tag: {}".format(node._tag))
+
+        converter = self.get_converter_for_tag(node._tag)
+
+        return converter.from_yaml_tree(node, node._tag, ctx)
 
     def get_converter_for_tag(self, tag):
-        return self._converters_by_tag.get(tag)
+        converters = self._converters_by_tag.get(tag, [])
+        if len(converters) == 0:
+            return None
+        elif len(converters) == 1:
+            return converters[0]
+        else:
+            # TODO: warning
+            return converters[0]
 
-    def get_converter_for_type(self, type):
-        return self._converters_by_type.get(type)
+    def get_converter_for_type(self, typ):
+        converters = self._converters_by_type.get(typ, [])
+        if len(converters) == 0:
+            return None
+        elif len(converters) == 1:
+            return converters[0]
+        else:
+            # TODO: warning
+            return converters[0]
 
 
 class AsdfExtensionList:
@@ -403,19 +436,15 @@ class AsdfExtensionList:
     Manage a set of extensions that are in effect.
     """
     def __init__(self, extensions):
+        extensions = [ExtensionProxy.maybe_wrap(e) for e in extensions]
+
         tag_mapping = []
         url_mapping = []
         validators = {}
         self._type_index = AsdfTypeIndex()
         for extension in extensions:
-            if not isinstance(extension, AsdfExtension):
-                raise TypeError(
-                    "Extension must implement asdf.types.AsdfExtension "
-                    "interface")
             tag_mapping.extend(extension.tag_mapping)
-            # New-style extensions will not include a url_mapping attribute.
-            if hasattr(extension, "url_mapping"):
-                url_mapping.extend(extension.url_mapping)
+            url_mapping.extend(extension.url_mapping)
             for typ in extension.types:
                 self._type_index.add_type(typ, extension)
                 validators.update(typ.validators)
@@ -497,7 +526,9 @@ class _DefaultExtensions:
             dist = entry_point.dist
             name = get_class_name(ext, instance=False)
             self._package_metadata[name] = (dist.project_name, dist.version)
-            self._extensions.append(ext())
+            self._extensions.append(
+                ExtensionProxy(ext(), package_name=dist.project_name, package_version=dist.version)
+            )
 
             for warning in w:
                 warnings.warn('{} (from {})'.format(warning.message, name),
@@ -514,7 +545,13 @@ class _DefaultExtensions:
                 # Fake the extension metadata
                 name = get_class_name(BuiltinExtension, instance=False)
                 self._package_metadata[name] = ('asdf', asdf_version)
-                self._extensions.append(BuiltinExtension())
+                self._extensions.append(
+                    ExtensionProxy(
+                        BuiltinExtension(),
+                        package_name='asdf',
+                        package_version=asdf_version,
+                    )
+                )
 
             self._load_installed_extensions()
 

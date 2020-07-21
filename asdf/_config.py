@@ -26,13 +26,13 @@ class AsdfConfig:
         resource_mappings=None,
         resource_manager=None,
         extensions=None,
-        enabled_extensions=None,
+        default_extensions=None,
         validate_on_read=None,
     ):
         self._resource_mappings = resource_mappings
         self._resource_manager = resource_manager
         self._extensions = extensions
-        self._enabled_extensions = enabled_extensions
+        self._default_extensions = default_extensions
 
         if validate_on_read is None:
             self._validate_on_read = DEFAULT_VALIDATE_ON_READ
@@ -123,11 +123,11 @@ class AsdfConfig:
         if self._extensions is None:
             with self._lock:
                 if self._extensions is None:
-                    self._extensions = [ExtensionProxy(e) for e in entry_points.get_extensions()]
+                    self._extensions = entry_points.get_extensions()
         return self._extensions
 
     @property
-    def enabled_extensions(self):
+    def default_extensions(self):
         """
         Get the list of `AsdfExtension` instances that are
         are enabled by default for new files.
@@ -136,11 +136,11 @@ class AsdfConfig:
         -------
         list of asdf.AsdfExtension
         """
-        if self._enabled_extensions is None:
+        if self._default_extensions is None:
             with self._lock:
-                if self._enabled_extensions is None:
-                    self._enabled_extensions = [e for e in self.extensions if e.default_enabled]
-        return self._enabled_extensions
+                if self._default_extensions is None:
+                    self._default_extensions = [e for e in self.extensions if e.default_enabled]
+        return self._default_extensions
 
     @property
     def validate_on_read(self):

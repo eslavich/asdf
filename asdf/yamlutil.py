@@ -219,6 +219,9 @@ def custom_tree_to_tagged_tree(tree, ctx):
     annotated with tags.
     """
     def walker(node):
+        if type(node) in ctx.extension_manager.types:
+            return ctx.extension_manager.to_yaml_tree(node, ctx)
+
         tag = ctx.type_index.from_custom_type(type(node), ctx.version_string)
         if tag is not None:
             return tag.to_tree_tagged(node, ctx)
@@ -247,6 +250,9 @@ def tagged_tree_to_custom_tree(tree, ctx, force_raw_types=False):
         tag = getattr(node, '_tag', None)
         if tag is None:
             return node
+
+        if tag in ctx.extension_manager.tags:
+            return ctx.extension_manager.from_yaml_tree(node, ctx)
 
         tag_type = ctx.type_index.from_yaml_tag(ctx, tag)
         # This means the tag did not correspond to any type in our type index.

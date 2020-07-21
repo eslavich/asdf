@@ -63,6 +63,7 @@ class AsdfFile(versioning.VersionedMixin):
             automatically determined from the associated file object,
             if possible and if created from `AsdfFile.open`.
 
+        # TODO: fix this up
         extensions : list of AsdfExtension or str
             A list of extensions to use when reading and writing ASDF files.
             If `str`, must be an extension URI for which a single
@@ -674,6 +675,8 @@ class AsdfFile(versioning.VersionedMixin):
             has_blocks = True
         elif yaml_token != b'':
             raise IOError("ASDF file appears to contain garbage after header.")
+
+        
 
         if tree is None:
             # At this point the tree should be tagged, but we want it to be

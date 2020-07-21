@@ -3,7 +3,7 @@ import warnings
 from collections.abc import Mapping
 
 from .exceptions import AsdfWarning
-from .extension import AsdfExtension
+from .extension import AsdfExtension, ExtensionProxy
 
 
 RESOURCE_MAPPINGS_GROUP = "asdf.resource_mappings"
@@ -16,8 +16,10 @@ def get_resource_mappings():
 
 
 def get_extensions():
-    new_style_extensions = _get_entry_point_elements(EXTENSIONS_GROUP, AsdfExtension)
-    
+    new_extensions = [ExtensionProxy(e) for e in _get_entry_point_elements(EXTENSIONS_GROUP, AsdfExtension)]
+    legacy_extensions = [ExtensionProxy(e) for e in _get_entry_point_elements(LEGACY_EXTENSIONS_GROUP, AsdfExtension)]
+
+    return new_extensions + legacy_extensions
 
 
 def _get_entry_point_elements(group, element_class):

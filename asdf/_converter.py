@@ -19,39 +19,37 @@ class AsdfConverter(abc.ABC):
     Abstract base class for plugins that convert nodes from the
     parsed YAML tree into custom objects, and vice versa.
 
-    Implementing classes must provide the `tag` and `types`
+    Implementing classes must provide the `tags` and `types`
     properties and `to_yaml_tree` and `from_yaml_tree` methods.
-    Other properties are optional.
     """
     @classmethod
     def __subclasshook__(cls, C):
         if cls is AsdfConverter:
-            return (hasattr(C, "tag") and
+            return (hasattr(C, "tags") and
                     hasattr(C, "types") and
                     hasattr(C, "to_yaml_tree") and
                     hasattr(C, "from_yaml_tree"))
         return NotImplemented
 
     @abc.abstractproperty
-    def tag(self):
+    def tags(self):
         """
-        Get the YAML tag that this converter operates on.
+        Get the YAML tags that this converter operates on.
 
         Returns
         -------
-        str
-            YAML tag URI.
+        iterable of str
         """
         pass
 
     @abc.abstractproperty
     def types(self):
         """
-        Get the list of types that this converter supports.
+        Get the Python types that this converter operates on.
 
         Returns
         -------
-        list of type
+        iterable of type
         """
         pass
 
@@ -80,10 +78,11 @@ class AsdfConverter(abc.ABC):
             be an instance of one of the types listed in the `types`
             property.
         tag_or_tags : str or set of str
-            Tag that the
-        ctx : asdf.AsdfFile, optional
-            If the implementation of this method accepts a second argument,
-            it will receive the `asdf.AsdfFile` associated with obj.
+            The tag identifying the YAML type that `obj` should be converted
+            into.  If multiple tags listed in this converter's `tags` property
+            are enabled, this value will be a set.
+        ctx : asdf.AsdfFile
+            The `asdf.AsdfFile` for which this object is being serialized.
 
         Returns
         -------
@@ -118,6 +117,8 @@ class AsdfConverter(abc.ABC):
             object will actually be an instance of `asdf.tagged.TaggedDict`,
             `asdf.tagged.TaggedList`, or `asdf.tagged.TaggedString`.  These
             objects should behave identically to their built-in counterparts.
+        tag : str
+            The YAML type of the object being deserialized.
         ctx : asdf.AsdfFile, optional
             If the implementation of this method accepts a second argument,
             it will receive the `asdf.AsdfFile` associated with the tree.
@@ -129,50 +130,6 @@ class AsdfConverter(abc.ABC):
             or a generator that yields such an instance.
         """
         pass
-
-    @property
-    def schema_uri(self):
-        """
-        Get the URI of the schema that validates this converter's
-        tagged object.
-
-        Returns
-        -------
-        str or None
-            Schema URI, or `None` if no such schema exists.
-        """
-        return None
-
-    @property
-    def schema(self):
-        """
-        Get additional schema content that further validates
-        this converter's tagged object.
-
-        Returns
-        -------
-        str or bytes or dict or None
-            Schema content as a YAML string or bytes, a dict,
-            or `None` to skip additional validation.
-        """
-        return None
-
-    @property
-    def validators(self):
-        """
-        Get the `dict` of custom jsonschema validators that are to
-        be used with this object's schema.  The keys are schema property
-        names and the values are methods that accept four arguments:
-        the jsonschema validator object, the value of the schema property,
-        the object to be validated, and the full schema object.  Validator
-        methods are expected to raise `asdf.ValidationError` on validation
-        failure.
-
-        Returns
-        -------
-        dict
-        """
-        return None
 
 
 class ConverterProxy(AsdfConverter):
@@ -188,44 +145,17 @@ class ConverterProxy(AsdfConverter):
 
     @property
     def tags(self):
-        return self._delegate.tags
+        return set(self._delegate.tags)
 
     @property
     def types(self):
-        return self._delegate.types
+        return set(self._delegate.types)
 
-    def to_yaml_tree(self, obj, tags, ctx):
-        if len(tags) == 1:
-            tag_or_tags = iter(tags).next()
-        else:
-            tag_or_tags = set(tags)
-
-        node = self._delegate.to_yaml_tree(obj, tag_or_tags, ctx)
-        if isinstance(node, GeneratorType):
-            generator = node
-            node = next(generator)
-        else:
-            generator = None
-
-        if not isinstance(node, tagged.Tagged):
-            if len(tags) > 1:
-                raise RuntimeError("Ambiguous tag for type {}".format(type(obj)))
-            node = tagged.tag_object(tag_or_tags, node, ctx=ctx)
-
-        yield node
-        if generator is not None:
-            yield from generator
+    def to_yaml_tree(self, obj, tag_or_tags, ctx):
+        return self._delegate.to_yaml_tree(obj, tag_or_tags, ctx)
 
     def from_yaml_tree(self, node, tag, ctx):
         return self._delegate.from_yaml_tree(node, tag, ctx)
-
-    @property
-    def validators(self):
-        result = getattr(self._delegate, "validators", {})
-        if result is None:
-            return {}
-        else:
-            return result
 
     @property
     def delegate(self):
@@ -235,67 +165,8 @@ class ConverterProxy(AsdfConverter):
     def extension(self):
         return self._extension
 
-    @property
-    def fully_qualified_class_name(self):
-        delegate = self._delegate
-        return delegate.__class__.__module__ + "." + delegate.__class__.__qualname__
-
-    # TODO: __repr__
-
-
-class ConverterManager:
-    def __init__(self, extensions):
-        self._converters_by_tag = collections.defaultdict(list)
-        self._converters_by_type = collections.defaultdict(list)
-        self._warned_types = set()
-        self._warned_tags = set()
-
-        for extension in extensions:
-            for converter in extension.converters:
-                self._converters_by_tag[converter.tag].append(converter)
-                for typ in converter.types:
-                    self._converters_by_type[typ].append(converter)
-
-    def tag_supported(self, tag):
-        return tag in self._converters_by_tag
-
-    def type_supported(self, typ):
-        return typ in self._converters_by_type
-
-    def from_tag(self, tag):
-        converters = self._converters_by_tag[tag]
-        if len(converters) == 0:
-            raise ValueError("No enabled extension supports tag '{}'".format(tag))
-        elif len(converters) > 1:
-            if tag not in self._warned_tags:
-                warnings.warn(
-                    "Multiple enabled extensions claim tag '{}': \n\n"
-                    "{}\n\n"
-                    "Choosing the converter provided by {}.".format(
-                        tag.__name__,
-                        "\n".join(c.extension.fully_qualified_class_name for c in converters),
-                        converters[-1].extension.fully_qualified_class_name
-                    )
-                )
-                self._warned_tags.add(tag)
-        else:
-            return converters[0]
-
-    def from_type(self, typ):
-        converters = self._converters_by_type[typ]
-        if len(converters) == 0:
-            raise ValueError("No enabled extension supports type {}".format(typ.__name__))
-        elif len(converters) > 1:
-            if typ not in self._warned_types:
-                warnings.warn(
-                    "Multiple enabled extensions claim type {}: \n\n"
-                    "{}\n\n"
-                    "Choosing the converter provided by {}.".format(
-                        typ.__name__,
-                        "\n".join(c.extension.fully_qualified_class_name for c in converters),
-                        converters[-1].extension.fully_qualified_class_name
-                    )
-                )
-                self._warned_types.add(typ)
-
-        return converters[-1]
+    def __repr__(self):
+        return "ConverterProxy({!r}, {!r})".format(
+            self.delegate,
+            self.extension,
+        )
