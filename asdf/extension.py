@@ -10,6 +10,7 @@ import yaml
 from . import tagged
 from . import types
 from . import resolver
+from .tags.core import ExtensionMetadata, Software
 from .util import get_class_name
 from .type_index import AsdfTypeIndex
 from .version import version as asdf_version
@@ -308,6 +309,9 @@ class ExtensionProxy(AsdfExtension):
     def package_version(self):
         return self._package_version
 
+    def get_metadata(self):
+        
+
     def __repr__(self):
         return "ExtensionProxy({!r}, package_name={!r}, package_version={!r})".format(
             self.delegate,
@@ -524,7 +528,6 @@ class _DefaultExtensions:
     def __init__(self):
         self._extensions = []
         self._extension_list = None
-        self._package_metadata = {}
 
     def _load_installed_extensions(self, group='asdf_extensions'):
         for entry_point in iter_entry_points(group=group):
@@ -578,10 +581,6 @@ class _DefaultExtensions:
             self._extension_list = AsdfExtensionList(self.extensions)
 
         return self._extension_list
-
-    @property
-    def package_metadata(self):
-        return self._package_metadata
 
     def reset(self):
         """This will be used primarily for testing purposes."""

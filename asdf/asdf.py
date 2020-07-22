@@ -133,7 +133,7 @@ class AsdfFile(versioning.VersionedMixin):
         # custom_tree_to_tagged_tree or tagged_tree_to_custom_tree).
         self._tree_modification_context = treeutil._TreeModificationContext()
 
-        
+
 
         self._fd = None
         self._closed = False
@@ -215,7 +215,6 @@ class AsdfFile(versioning.VersionedMixin):
     def _process_extensions(self, extensions):
         if extensions is None or extensions == []:
             self._extensions = default_extensions.extension_list
-            self._extension_metadata = default_extensions.package_metadata
             return
 
         if isinstance(extensions, AsdfExtensionList):
@@ -232,7 +231,6 @@ class AsdfFile(versioning.VersionedMixin):
 
         extensions = default_extensions.extensions + extensions
         self._extensions = AsdfExtensionList(extensions)
-        self._extension_metadata.update(default_extensions.package_metadata)
 
     def _update_extension_history(self):
         if self.version < versioning.NEW_HISTORY_FORMAT_MIN_VERSION:
