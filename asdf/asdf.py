@@ -246,7 +246,7 @@ class AsdfFile(versioning.VersionedMixin):
         for extension in self.type_index.get_extensions_used():
             for i, entry in enumerate(self.tree['history']['extensions']):
                 # Update metadata about this extension if it already exists
-                if entry.extension_uri 
+                if entry.extension_uri
                 if entry.extension_class == ext_meta.extension_class:
                     self.tree['history']['extensions'][i] = ext_meta
                     break
@@ -665,14 +665,26 @@ class AsdfFile(versioning.VersionedMixin):
         elif yaml_token != b'':
             raise IOError("ASDF file appears to contain garbage after header.")
 
-
-
         if tree is None:
             # At this point the tree should be tagged, but we want it to be
             # tagged with the core/asdf version appropriate to this file's
             # ASDF Standard version.  We're using custom_tree_to_tagged_tree
             # to select the correct tag for us.
             tree = yamlutil.custom_tree_to_tagged_tree(AsdfObject(), self)
+
+        history = tree.get("history", {})
+        if isinstance(history, dict):
+            extension_metadata = history.get("extensions")
+        else:
+            extension_metadata = []
+
+        # TODO: determine which extensions we need
+
+        extensions = []
+
+
+
+        self._process_extensions(extensions)
 
         if has_blocks:
             self._blocks.read_internal_blocks(
@@ -691,9 +703,6 @@ class AsdfFile(versioning.VersionedMixin):
                 raise
 
         tree = yamlutil.tagged_tree_to_custom_tree(tree, self, _force_raw_types)
-
-        if not (ignore_missing_extensions or _force_raw_types):
-            self._check_extensions(tree, strict=strict_extension_check)
 
         self._tree = tree
         self.run_hook('post_read')
