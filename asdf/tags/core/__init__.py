@@ -41,25 +41,21 @@ class HistoryEntry(dict, AsdfType):
     version = '1.0.0'
 
 
-class ExtensionMetadata(AsdfType):
+class ExtensionMetadata(dict, AsdfType):
     name = 'core/extension_metadata'
     version = '1.0.0'
 
-    def __init__(self, extension_class=None, software={}):
-        self.extension_class = extension_class
-        self.software = software
+    @property
+    def extension_class(self):
+        return self['extension_class']
 
-    @classmethod
-    def from_tree(cls, node, ctx):
-        return cls(**node)
+    @property
+    def software(self):
+        return self.get('software')
 
-    @classmethod
-    def to_tree(cls, node, ctx):
-        tree = {}
-        tree['extension_class'] = node.extension_class
-        tree['software'] = node.software
-
-        return tree
+    @property
+    def extension_uri(self):
+        return self.get('extension_uri')
 
 
 class SubclassMetadata(dict, AsdfType):

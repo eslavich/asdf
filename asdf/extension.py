@@ -310,7 +310,11 @@ class ExtensionProxy(AsdfExtension):
         return self._package_version
 
     def get_metadata(self):
-        
+        return ExtensionMetadata(
+            extension_class=get_class_name(self._delegate),
+            software=Software(name=self.package_name, version=self.package_version),
+            extension_uri=self.extension_uri
+        )
 
     def __repr__(self):
         return "ExtensionProxy({!r}, package_name={!r}, package_version={!r})".format(

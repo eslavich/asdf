@@ -110,7 +110,6 @@ class AsdfFile(versioning.VersionedMixin):
 
         """
         self._extensions = []
-        self._extension_metadata = {}
         self._process_extensions(extensions)
 
         if custom_schema is not None:
@@ -224,11 +223,6 @@ class AsdfFile(versioning.VersionedMixin):
         if not isinstance(extensions, list):
             extensions = [extensions]
 
-        # Process metadata about custom extensions
-        for extension in extensions:
-            ext_name = util.get_class_name(extension)
-            self._extension_metadata[ext_name] = ('', '')
-
         extensions = default_extensions.extensions + extensions
         self._extensions = AsdfExtensionList(extensions)
 
@@ -250,14 +244,9 @@ class AsdfFile(versioning.VersionedMixin):
             self.tree['history']['extensions'] = []
 
         for extension in self.type_index.get_extensions_used():
-            ext_name = util.get_class_name(extension)
-            ext_meta = ExtensionMetadata(extension_class=ext_name)
-            metadata = self._extension_metadata.get(ext_name)
-            if metadata is not None:
-                ext_meta.software = Software(name=metadata[0], version=metadata[1])
-
             for i, entry in enumerate(self.tree['history']['extensions']):
                 # Update metadata about this extension if it already exists
+                if entry.extension_uri 
                 if entry.extension_class == ext_meta.extension_class:
                     self.tree['history']['extensions'][i] = ext_meta
                     break
@@ -734,7 +723,6 @@ class AsdfFile(versioning.VersionedMixin):
                             strict_extension_check=strict_extension_check,
                             ignore_missing_extensions=ignore_missing_extensions,
                             ignore_unrecognized_tag=self._ignore_unrecognized_tag,
-                            _extension_metadata=self._extension_metadata,
                             **kwargs)
             except ValueError:
                 raise ValueError(
