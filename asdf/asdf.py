@@ -133,6 +133,8 @@ class AsdfFile(versioning.VersionedMixin):
         # custom_tree_to_tagged_tree or tagged_tree_to_custom_tree).
         self._tree_modification_context = treeutil._TreeModificationContext()
 
+        
+
         self._fd = None
         self._closed = False
         self._external_asdf_by_uri = {}
@@ -676,7 +678,7 @@ class AsdfFile(versioning.VersionedMixin):
         elif yaml_token != b'':
             raise IOError("ASDF file appears to contain garbage after header.")
 
-        
+
 
         if tree is None:
             # At this point the tree should be tagged, but we want it to be

@@ -316,6 +316,18 @@ class ExtensionProxy(AsdfExtension):
         )
 
 
+class SerializationContext:
+    def __init__(self):
+        self._extensions_used = set()
+
+    def mark_extension_used(self, extension):
+        self._extensions_used.add(extension)
+
+    @property
+    def extensions_used(self):
+        return self._extensions_used
+
+
 class ExtensionManager:
     def __init__(self, extensions):
         self._extensions = []
@@ -398,6 +410,8 @@ class ExtensionManager:
                 raise RuntimeError("Ambiguous tag for type {}".format(type(obj)))
             node = tagged.tag_object(tag_or_tags, node, ctx=ctx)
 
+        ctx.mark_extension_used(converter.extension)
+
         yield node
         if generator is not None:
             yield from generator
@@ -407,8 +421,9 @@ class ExtensionManager:
             raise TypeError("Unhandled tag: {}".format(node._tag))
 
         converter = self.get_converter_for_tag(node._tag)
-
-        return converter.from_yaml_tree(node, node._tag, ctx)
+        result = converter.from_yaml_tree(node, node._tag, ctx)
+        ctx.mark_extension_used(converter.extension)
+        return result
 
     def get_converter_for_tag(self, tag):
         converters = self._converters_by_tag.get(tag, [])
