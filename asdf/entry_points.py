@@ -12,20 +12,28 @@ LEGACY_EXTENSIONS_GROUP = "asdf_extensions"
 
 
 def get_resource_mappings():
-    return _get_entry_point_elements(RESOURCE_MAPPINGS_GROUP, Mapping)
+    return [e[0] for e in _iterate_entry_point(RESOURCE_MAPPINGS_GROUP, Mapping)]
 
 
 def get_extensions():
-    new_extensions = [ExtensionProxy(e) for e in _get_entry_point_elements(EXTENSIONS_GROUP, AsdfExtension)]
-    legacy_extensions = [ExtensionProxy(e) for e in _get_entry_point_elements(LEGACY_EXTENSIONS_GROUP, AsdfExtension)]
+    new_extensions = [
+        ExtensionProxy(extension, package_name=package_name, package_version=package_version)
+        for extension, package_name, package_version in _iterate_entry_point(EXTENSIONS_GROUP, AsdfExtension)
+    ]
+
+    legacy_extensions = [
+        ExtensionProxy(extension, package_name=package_name, package_version=package_version, legacy=True)
+        for extension, package_name, package_version in _iterate_entry_point(LEGACY_EXTENSIONS_GROUP, AsdfExtension)
+    ]
 
     return new_extensions + legacy_extensions
 
 
-def _get_entry_point_elements(group, element_class):
-    results = []
+def _iterate_entry_point(group, element_class):
     for entry_point in iter_entry_points(group=group):
         elements = entry_point.load()()
+        package_name = entry_point.dist.project_name
+        package_version = entry_point.dist.version
         for element in elements:
             if not isinstance(element, element_class):
                 warnings.warn(
@@ -33,5 +41,4 @@ def _get_entry_point_elements(group, element_class):
                     AsdfWarning
                 )
             else:
-                results.append(element)
-    return results
+                yield element, package_name, package_version

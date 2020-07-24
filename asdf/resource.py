@@ -8,6 +8,7 @@ import fnmatch
 import os
 import pkgutil
 import sys
+import yaml
 
 if sys.version_info < (3, 9):
     import importlib_resources
@@ -141,6 +142,9 @@ class ResourceManager(Mapping):
     def __contains__(self, uri):
         # Implement __contains__ only for efficiency.
         return uri in self._mappings_by_uri
+
+    def read_yaml(self, uri):
+        return yaml.safe_load(self[uri])
 
 
 _JSONSCHEMA_URI_TO_FILENAME = {

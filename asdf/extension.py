@@ -4,6 +4,7 @@ import warnings
 from pkg_resources import iter_entry_points
 from collections import defaultdict
 from types import GeneratorType
+from setuptools.extern.packaging.specifiers import SpecifierSet
 
 import yaml
 
@@ -16,6 +17,7 @@ from .type_index import AsdfTypeIndex
 from .version import version as asdf_version
 from .exceptions import AsdfDeprecationWarning, AsdfWarning
 from ._converter import ConverterProxy
+from ._helpers import validate_asdf_standard_version
 
 
 __all__ = ['AsdfExtension', 'AsdfExtensionList']
@@ -75,29 +77,66 @@ class AsdfExtension(abc.ABC):
         return None
 
     @property
+    def asdf_standard_requirement(self):
+        """
+        Get the ASDF Standard version requirement for this extension.
+
+        Returns
+        -------
+        str or None
+            If str, PEP 440 version specifier.
+            If None, support all versions.
+        """
+        return None
+
+    @property
     def default_enabled(self):
         """
-        Return `True` if this extension should be enabled by default.
-        Typically extension packages will enable only the latest
-        version of the extension.
+        Return `True` if this extension should be enabled by default
+        for new files (that meet the ASDF Standard requirement).
+        Typically extension packages will enable only the latest version
+        of an extension as default.  Users can reconfigure default
+        extensions globally or on an individual file basis.
+
+        This flag does not automatically enable the extension when
+        reading existing files.  Instead, enabled extensions will
+        be selected based on file metadata.
 
         Returns
         -------
         bool
         """
-        return True
+        return False
+
+    @property
+    def always_enabled(self):
+        """
+        Return `True` if this extension should always be enabled
+        when reading and writing files (that meet the ASDF Standard
+        requirement).  Use judiciously, as users will only be able
+        to disable the extension by uninstalling its associated package.
+
+        This feature is intended to allow convenient reading of
+        older files that did not list extension URIs in their metadata.
+
+        Returns
+        -------
+        bool
+        """
+        return False
 
     @property
     def tags(self):
         """
-        Get the tags introduced by this extension.
+        Get the tags supported by this extension.
 
         Returns
         -------
-        iterable of str or AsdfTagDescription
+        iterable of str or AsdfTagDescription, or None
             If str, the tag URI value.
+            If None, use all tags provided by the converters.
         """
-        return []
+        return None
 
     @property
     def converters(self):
@@ -200,21 +239,40 @@ class AsdfExtension(abc.ABC):
 
 
 class ManifestExtension(AsdfExtension):
-    def __init__(self, extension_uri, converters=None, default_enabled=False):
-        self._extension_uri = extension_uri
+    def __init__(self, manifest, default_enabled=False, always_enabled=False, converters=None):
+        self._manifest = manifest
         self._default_enabled = default_enabled
-        self._converters = converters
+        self._always_enabled = always_enabled
 
-        from ._config import get_config
-        self._manifest = yaml.safe_load(get_config().resource_manager[extension_uri])
+        if converters is None:
+            self._converters = []
 
     @property
     def extension_uri(self):
-        return self._extension_uri
+        return self._manifest["extension_uri"]
+
+    @property
+    def asdf_standard_requirement(self):
+        version = self._manifest.get("asdf_standard_requirement", None)
+        if version is None:
+            return None
+        elif isinstance(version, str):
+            return "=={}".format(version)
+        else:
+            specifiers = []
+            for prop, operator in [("gt", ">"), ("gte", ">="), ("lt", "<"), ("lte", "<=")]:
+                value = version.get(prop)
+                if value:
+                    specifiers.append("{}{}".format(operator, value))
+            return ",".join(specifiers)
 
     @property
     def default_enabled(self):
         return self._default_enabled
+
+    @property
+    def always_enabled(self):
+        return self._always_enabled
 
     @property
     def converters(self):
@@ -233,9 +291,10 @@ class ManifestExtension(AsdfExtension):
         return result
 
     def __repr__(self):
-        return "ManifestExtension({!r}, converters=[...], default_enabled={!r})".format(
+        return "ManifestExtension(<{}>, default_enabled={!r}, always_enabled={!r}, converters=[...])".format(
             self.extension_uri,
             self.default_enabled,
+            self.always_enabled,
         )
 
 
@@ -252,17 +311,40 @@ class ExtensionProxy(AsdfExtension):
         else:
             return ExtensionProxy(delegate)
 
-    def __init__(self, delegate, package_name=None, package_version=None):
+    def __init__(self, delegate, package_name=None, package_version=None, legacy=False):
         if not isinstance(delegate, AsdfExtension):
             raise TypeError("Extension must implement the AsdfExtension interface")
 
         self._delegate = delegate
         self._package_name = package_name
         self._package_version = package_version
+        self._legacy = legacy
 
     @property
     def extension_uri(self):
         return getattr(self._delegate, "extension_uri", None)
+
+    @property
+    def asdf_standard_requirement(self):
+        version = getattr(self._delegate, "asdf_standard_requirement", None)
+        if isinstance(version, str):
+            return SpecifierSet(version)
+        elif version is None:
+            return SpecifierSet()
+        else:
+            raise TypeError("asdf_standard_requirement must be str or None")
+
+    @property
+    def default_enabled(self):
+        return getattr(self._delegate, "default_enabled", False)
+
+    @property
+    def always_enabled(self):
+        value = getattr(self._delegate, "always_enabled", None)
+        if value is None:
+            return self._legacy
+        else:
+            return value
 
     @property
     def converters(self):
@@ -284,18 +366,22 @@ class ExtensionProxy(AsdfExtension):
     @property
     def tag_descriptions(self):
         result = []
-        for tag in getattr(self._delegate, "tags", []):
-            if isinstance(tag, str):
-                result.append(AsdfTagDescription(tag))
-            elif isinstance(tag, AsdfTagDescription):
-                result.append(tag)
-            else:
-                raise TypeError("Extension tags values must be str or AsdfTagDescription")
-        return result
 
-    @property
-    def default_enabled(self):
-        return getattr(self._delegate, "default_enabled", True)
+        tags = getattr(self._delegate, "tags", None)
+        if tags is None:
+            for converter in self.converters:
+                for tag in converter.tags:
+                    result.append(AsdfTagDescription(tag))
+        else:
+            for tag in tags:
+                if isinstance(tag, str):
+                    result.append(AsdfTagDescription(tag))
+                elif isinstance(tag, AsdfTagDescription):
+                    result.append(tag)
+                else:
+                    raise TypeError("Extension tags values must be str or AsdfTagDescription")
+
+        return result
 
     @property
     def delegate(self):
@@ -309,6 +395,10 @@ class ExtensionProxy(AsdfExtension):
     def package_version(self):
         return self._package_version
 
+    @property
+    def legacy(self):
+        return self._legacy
+
     def get_metadata(self):
         return ExtensionMetadata(
             extension_class=get_class_name(self._delegate),
@@ -317,10 +407,11 @@ class ExtensionProxy(AsdfExtension):
         )
 
     def __repr__(self):
-        return "ExtensionProxy({!r}, package_name={!r}, package_version={!r})".format(
+        return "ExtensionProxy({!r}, package_name={!r}, package_version={!r}, legacy={!r})".format(
             self.delegate,
             self.package_name,
             self.package_version,
+            self.legacy,
         )
 
 
@@ -337,19 +428,28 @@ class SerializationContext:
 
 
 class ExtensionManager:
-    def __init__(self, extensions):
+    def __init__(self, extensions=None):
+        self._reset()
+
+        if extensions is not None:
+            for extension in extensions:
+                self.add_extension(extension)
+
+    def _reset(self):
         self._extensions = []
         self._tag_descriptions_by_tag = defaultdict(list)
         self._converters_by_tag = defaultdict(list)
         self._converters_by_type = defaultdict(list)
         self._tags = set()
         self._types = set()
-
-        for extension in self._extensions:
-            self.add_extension(extension)
+        self._extension_list = None
 
     def add_extension(self, extension):
         extension = ExtensionProxy.maybe_wrap(extension)
+
+        if any(e for e in self._extensions if e.delegate is extension.delegate):
+            # It's useful for this method to be idempotent.
+            return
 
         self._extensions.append(extension)
 
@@ -371,6 +471,15 @@ class ExtensionManager:
 
         self._tags.update(extension_tags)
         self._types.update(extension_types)
+        self._extension_list = None
+
+    def remove_extension(self, extension):
+        extension = ExtensionProxy.maybe_wrap(extension)
+
+        remaining_extensions = [e for e in self.extensions if e.delegate is not extension.delegate]
+        self._reset()
+        for ext in remaining_extensions:
+            self.add_extension(ext)
 
     @property
     def extensions(self):
@@ -383,6 +492,12 @@ class ExtensionManager:
     @property
     def types(self):
         return self._types
+
+    @property
+    def _extension_list(self):
+        if self._extension_list is None:
+            self._extension_list = AsdfExtensionList(self.extensions)
+        return self._extension_list
 
     def get_tag_schema_uri(self, tag):
         tag_descriptions = self._tag_descriptions_by_tag.get(tag, [])
@@ -529,74 +644,22 @@ class BuiltinExtension:
 
 
 class _DefaultExtensions:
-    def __init__(self):
-        self._extensions = []
-        self._extension_list = None
-
-    def _load_installed_extensions(self, group='asdf_extensions'):
-        for entry_point in iter_entry_points(group=group):
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter('always', category=AsdfDeprecationWarning)
-                ext = entry_point.load()
-            if not issubclass(ext, AsdfExtension):
-                warnings.warn("Found entry point {}, from {} but it is not a "
-                              "subclass of AsdfExtension, as expected. It is "
-                              "being ignored.".format(ext, entry_point.dist),
-                              AsdfWarning)
-                continue
-
-            dist = entry_point.dist
-            name = get_class_name(ext, instance=False)
-            self._package_metadata[name] = (dist.project_name, dist.version)
-            self._extensions.append(
-                ExtensionProxy(ext(), package_name=dist.project_name, package_version=dist.version)
-            )
-
-            for warning in w:
-                warnings.warn('{} (from {})'.format(warning.message, name),
-                              AsdfDeprecationWarning)
-
     @property
     def extensions(self):
-        # This helps avoid a circular dependency with external packages
-        if not self._extensions:
-            # If this environment variable is defined, load the default
-            # extension. This allows the package to be tested without being
-            # installed (e.g. for builds on Debian).
-            if os.environ.get(ASDF_TEST_BUILD_ENV):
-                # Fake the extension metadata
-                name = get_class_name(BuiltinExtension, instance=False)
-                self._package_metadata[name] = ('asdf', asdf_version)
-                self._extensions.append(
-                    ExtensionProxy(
-                        BuiltinExtension(),
-                        package_name='asdf',
-                        package_version=asdf_version,
-                    )
-                )
-
-            self._load_installed_extensions()
-
-        return self._extensions
+        from ._config import get_config
+        return [e for e in get_config().extensions if e.legacy]
 
     @property
     def extension_list(self):
-        if self._extension_list is None:
-            self._extension_list = AsdfExtensionList(self.extensions)
-
-        return self._extension_list
-
-    def reset(self):
-        """This will be used primarily for testing purposes."""
-        self._extensions = []
-        self._extension_list = None
-        self._package_metadata = {}
+        return AsdfExtensionList(self.extensions)
 
     @property
     def resolver(self):
         return self.extension_list.resolver
 
 
+# This is no longer used by AsdfFile, but it remains in case
+# external users need it.
 default_extensions = _DefaultExtensions()
 
 

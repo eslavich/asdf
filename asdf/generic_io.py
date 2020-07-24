@@ -1098,7 +1098,7 @@ def get_uri(file_obj):
     return getattr(file_obj, 'name', '')
 
 
-def get_file(init, mode='r', uri=None, close=False):
+def fget_fie(init, mode='r', uri=None, close=False):
     """
     Returns a `GenericFile` instance suitable for wrapping the given
     object `init`.
