@@ -23,7 +23,7 @@ class Converter(abc.ABC):
     """
     @classmethod
     def __subclasshook__(cls, C):
-        if cls is AsdfConverter:
+        if cls is Converter:
             return (hasattr(C, "tags") and
                     hasattr(C, "types") and
                     hasattr(C, "to_yaml_tree") and
