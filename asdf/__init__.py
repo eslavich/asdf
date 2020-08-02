@@ -23,7 +23,7 @@ from .stream import Stream
 from . import commands
 from .tags.core import IntegerType
 from .tags.core.external_reference import ExternalArrayReference
+from .config import get_config, config_context
 from ._convenience import info
-from ._config import get_config, config_context
 
 from jsonschema import ValidationError

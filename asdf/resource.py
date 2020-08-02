@@ -23,6 +23,7 @@ __all__ = [
     "ResourceManager",
     "JsonschemaResourceMapping",
     "get_core_resource_mappings",
+    "ResourceMappingProxy",
 ]
 
 

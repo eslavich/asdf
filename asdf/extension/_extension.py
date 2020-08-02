@@ -1,16 +1,19 @@
 import abc
 import warnings
+from collections import defaultdict
+from types import GeneratorType
 
 from packaging.specifiers import SpecifierSet
 
-from . import types
-from . import resolver
-from .util import get_class_name
-from .type_index import AsdfTypeIndex
-from .exceptions import AsdfDeprecationWarning
+from .. import types
+from .. import resolver
+from ..util import get_class_name
+from ..type_index import AsdfTypeIndex
+from ..exceptions import AsdfDeprecationWarning
+from .. import tagged
 
-
-__all__ = ['AsdfExtension', 'AsdfExtensionList']
+from ._converter import ConverterProxy, AsdfConverter
+from ._tag_definition import AsdfTagDefinition
 
 
 class AsdfExtension(abc.ABC):
@@ -29,12 +32,12 @@ class AsdfExtension(abc.ABC):
     @property
     def extension_uri(self):
         """
-        Get this extension's identifying URI.  The URI is required
+        Get this extension's identifying URI.  This URI is required
         of new-style extensions.
 
         Returns
         -------
-        str
+        str or None
         """
         return None
 
@@ -104,6 +107,31 @@ class AsdfExtension(abc.ABC):
             If None, support all versions.
         """
         return None
+
+    @property
+    def tags(self):
+        """
+        Get the tags supported by this extension.
+
+        Returns
+        -------
+        iterable of str or asdf.extension.AsdfTagDefinition, or None
+            If str, the tag URI.
+            If None, use all tags provided by the converters.
+        """
+        return None
+
+    @property
+    def converters(self):
+        """
+        Get the `AsdfConverter` instances that support tags
+        provided by this extension.
+
+        Returns
+        -------
+        iterable of asdf.extension.AsdfConverter
+        """
+        return []
 
     @property
     def types(self):
@@ -210,6 +238,7 @@ class ExtensionProxy(AsdfExtension):
         self._class_name = get_class_name(delegate)
 
         self._asdf_standard_requirement = None
+        self._tags = None
 
     @property
     def default(self):
@@ -238,6 +267,27 @@ class ExtensionProxy(AsdfExtension):
             else:
                 raise TypeError("asdf_standard_requirement must be str or None")
         return self._asdf_standard_requirement
+
+    @property
+    def tags(self):
+        if self._tags is None:
+            result = []
+
+            tags = getattr(self._delegate, "tags", None)
+            if tags is None:
+                for converter in self.converters:
+                    result.extend(converter.tags)
+            else:
+                for tag in tags:
+                    if isinstance(tag, str):
+                        result.append(AsdfTagDefinition(tag))
+                    elif isinstance(tag, AsdfTagDefinition):
+                        result.append(tag)
+                    else:
+                        raise TypeError("Extension tags values must be str or asdf.extension.AsdfTagDefinition")
+
+            self._tags = result
+        return self._tags
 
     @property
     def types(self):
@@ -292,6 +342,171 @@ class ExtensionProxy(AsdfExtension):
             package_description,
             requirement_description,
             self.legacy,
+        )
+
+
+class ExtensionManager:
+    """
+    Wraps a list of enabled extensions and indexes their converters
+    by tag and by Python type.
+
+    Parameters
+    ----------
+    extensions : iterable of asdf.extension.AsdfExtension
+        List of enabled extensions to manage.  Extensions placed earlier
+        in the list take precedence.
+    """
+    def __init__(self, extensions):
+        self._extensions = [ExtensionProxy.maybe_wrap(e) for e in extensions]
+
+        self._tag_defs_by_tag = defaultdict(list)
+        self._converters_by_tag = defaultdict(list)
+        self._converters_by_type = defaultdict(list)
+        self._converters_by_type_class_name = defaultdict(list)
+
+        for extension in extensions:
+            extension_tags = set()
+            for tag_def in extension.tags:
+                self._tag_defs_by_tag[tag_def.tag_uri].append(tag_def)
+                extension_tags.add(tag_def.tag_uri)
+            for converter in extension.converters:
+                for tag_def in converter.tags:
+                    # The converters may support multiple extension versions, so
+                    # only map tags that are included in the extension's tag list.
+                    if tag_def.tag_uri in extension_tags:
+                        self._converters_by_tag[tag_def.tag_uri].append(converter)
+                for typ in converter.types:
+                    if isinstance(typ, str):
+                        self._converters_by_type_class_name[typ].append(converter)
+                    else:
+                        self._converters_by_type[typ].append(converter)
+
+    @property
+    def extensions(self):
+        """
+        Get the list of enabled extensions.
+
+        Returns
+        -------
+        list of asdf.extension.AsdfExtension
+        """
+        return self._extensions
+
+    def handles_tag(self, tag):
+        """
+        Return `True` if the specified tag is handled by an
+        enabled converter.
+
+        Parameters
+        ----------
+        tag : str
+            Tag URI.
+
+        Returns
+        -------
+        bool
+        """
+        return tag in self._converters_by_tag
+
+    def handles_type(self, typ):
+        """
+        Returns `True` if the specified Python type is handled
+        by an enabled converter.
+
+        Parameters
+        ----------
+        typ : type
+
+        Returns
+        -------
+        bool
+        """
+        return (
+            typ in self._converters_by_type
+            or get_class_name(typ, instance=False) in self._converters_by_type_class_name
+        )
+
+    def get_tag_definition(self, tag):
+        """
+        Get the tag definition for the specified tag.
+
+        Parameters
+        ----------
+        tag : str
+            Tag URI.
+
+        Returns
+        -------
+        asdf.extension.AsdfTagDefinition
+
+        Raises
+        ------
+        KeyError
+            Unrecognized tag URI.
+        """
+        if tag in self._tag_defs_by_tag:
+            return self._tag_defs_by_tag[tag][0]
+        else:
+            raise KeyError("Unrecognized tag: {}".format(tag))
+
+
+    def get_converter_for_tag(self, tag):
+        """
+        Get the converter for the specified tag.
+
+        Parameters
+        ----------
+        tag : str
+            Tag URI.
+
+        Returns
+        -------
+        asdf.extension.AsdfConverter
+
+        Raises
+        ------
+        KeyError
+            Unrecognized tag URI.
+        """
+        if tag in self._converters_by_tag:
+            return self._converters_by_tag[0]
+
+        raise KeyError(
+            "No AsdfConverter support available for tag '{}'.  "
+            "You may need to install or enable an extension.".format(
+                tag
+            )
+        )
+
+    def get_converter_for_type(self, typ):
+        """
+        Get the converter for the specified Python type.
+
+        Parameters
+        ----------
+        typ : type
+
+        Returns
+        -------
+        asdf.extension.AsdfConverter
+
+        Raises
+        ------
+        KeyError
+            Unrecognized type.
+        """
+        if typ in self._converters_by_type:
+            return self._converters_by_type[typ][0]
+        else:
+            class_name = get_class_name(typ)
+            if class_name in self._converters_by_type_class_name:
+                return self._converters_by_type_class_name[class_name][0]
+
+        raise KeyError(
+            "No AsdfConverter support available for type '{}'.  "
+            "You may need to install or enable an extension.".format(
+                get_class_name(typ)
+            )
         )
 
 
@@ -386,7 +601,7 @@ class _DefaultExtensions:
     @property
     def extensions(self):
         if self._extensions is None:
-            from ._config import get_config
+            from ..config import get_config
             self._extensions = [e for e in get_config().extensions if e.legacy]
         return self._extensions
 

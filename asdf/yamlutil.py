@@ -1,5 +1,6 @@
 import warnings
 from collections import OrderedDict
+from types import GeneratorType
 
 import numpy as np
 
@@ -212,25 +213,68 @@ AsdfLoader.add_constructor(None, AsdfLoader.construct_undefined)
 AsdfLoader.add_constructor(YAML_TAG_PREFIX + "omap", AsdfLoader.construct_yaml_omap)
 
 
-def custom_tree_to_tagged_tree(tree, ctx):
+def custom_tree_to_tagged_tree(tree, ctx, _serialization_context=None):
     """
     Convert a tree, possibly containing custom data types that aren't
     directly representable in YAML, to a tree of basic data types,
     annotated with tags.
     """
-    # This attribute is set on the AsdfFile in the _write_tree
-    # method.
-    extensions_used = getattr(ctx, "_extensions_used", None)
+    if _serialization_context is None:
+        serialization_context = ctx._get_serialization_context()
+    else:
+        serialization_context = _serialization_context
 
-    def walker(node):
-        tag = ctx.type_index.from_custom_type(type(node), ctx.version_string, extensions_used=extensions_used)
-        if tag is not None:
-            return tag.to_tree_tagged(node, ctx)
-        return node
+    extension_manager = serialization_context.extension_manager
+
+    def _convert_obj(obj):
+        converter = extension_manager.get_converter_for_type(type(obj))
+
+        # Some tags supported by the converter may not be active right now:
+        tags = [t for t in converter.tags if t in extension_manager.handles_tag(t)]
+        tag = converter.select_tag(obj, tags, serialization_context)
+
+        node = converter.to_yaml_tree(obj, tag, serialization_context)
+        if isinstance(node, GeneratorType):
+            generator = node
+            node = next(generator)
+        else:
+            generator = None
+
+        if isinstance(node, dict):
+            tagged_node = tagged.TaggedDict(node, tag)
+        elif isinstance(node, list):
+            tagged_node = tagged.TaggedList(node, tag)
+        elif isinstance(node, str):
+            tagged_node = tagged.TaggedString(node)
+            tagged_node._tag = tag
+        else:
+            raise TypeError(
+                "AsdfConverter returned illegal node type: {}".format(util.get_class_name(node))
+            )
+
+        serialization_context.mark_extension_used(converter.extension)
+
+        yield tagged_node
+        if generator is not None:
+            yield from generator
+
+    def _walker(obj):
+        if extension_manager.handles_type(type(obj)):
+            return _convert_obj(obj)
+        else:
+            tag = ctx.type_index.from_custom_type(
+                type(obj),
+                ctx.version_string,
+                extensions_used=serialization_context.extensions_used
+            )
+
+            if tag is not None:
+                return tag.to_tree_tagged(obj, ctx)
+            return obj
 
     return treeutil.walk_and_modify(
         tree,
-        walker,
+        _walker,
         ignore_implicit_conversion=ctx._ignore_implicit_conversion,
         # Walk the tree in preorder, so that extensions can return
         # container nodes with unserialized children.
@@ -239,18 +283,31 @@ def custom_tree_to_tagged_tree(tree, ctx):
     )
 
 
-def tagged_tree_to_custom_tree(tree, ctx, force_raw_types=False):
+def tagged_tree_to_custom_tree(tree, ctx, force_raw_types=False, _serialization_context=None):
     """
     Convert a tree containing only basic data types, annotated with
     tags, to a tree containing custom data types.
     """
-    def walker(node):
+    if _serialization_context is None:
+        serialization_context = ctx._get_serialization_context()
+    else:
+        serialization_context = _serialization_context
+
+    extension_manager = serialization_context.extension_manager
+
+    def _walker(node):
         if force_raw_types:
             return node
 
         tag = getattr(node, '_tag', None)
         if tag is None:
             return node
+
+        if extension_manager.handles_tag(tag):
+            converter = extension_manager.get_converter_for_tag(tag)
+            obj = converter.from_yaml_tree(node.data, tag, serialization_context)
+            serialization_context.mark_extension_used(converter.extension)
+            return obj
 
         tag_type = ctx.type_index.from_yaml_tag(ctx, tag)
         # This means the tag did not correspond to any type in our type index.
@@ -287,7 +344,7 @@ def tagged_tree_to_custom_tree(tree, ctx, force_raw_types=False):
 
     return treeutil.walk_and_modify(
         tree,
-        walker,
+        _walker,
         ignore_implicit_conversion=ctx._ignore_implicit_conversion,
         # Walk the tree in postorder, so that extensions receive
         # container nodes with children already deserialized.
@@ -308,7 +365,7 @@ def load_tree(stream):
     return yaml.load(stream, Loader=AsdfLoader)
 
 
-def dump_tree(tree, fd, ctx, extensions_used=None, tree_finalizer=None):
+def dump_tree(tree, fd, ctx, tree_finalizer=None, _serialization_context=None):
     """
     Dump a tree of objects, possibly containing custom types, to YAML.
 
@@ -323,16 +380,14 @@ def dump_tree(tree, fd, ctx, extensions_used=None, tree_finalizer=None):
     ctx : Context
         The writing context.
 
-    extensions_used : set of asdf.AsdfExtension, optional
-        Set that records extensions used during the conversion.
-
     tree_finalizer : callable, optional
         Callable that modifies the tagged tree after conversion
         is complete.
     """
-    class AsdfDumperTmp(AsdfDumper):
-        pass
-    AsdfDumperTmp.ctx = ctx
+    if _serialization_context is None:
+        serialization_context = ctx._get_serialization_context()
+    else:
+        serialization_context = _serialization_context
 
     tags = None
     tree_type = ctx.type_index.from_custom_type(type(tree))
@@ -346,18 +401,18 @@ def dump_tree(tree, fd, ctx, extensions_used=None, tree_finalizer=None):
         yaml_tag = ':'.join(tag_parts[0:-1] + [last_part])
         tags = {'!': yaml_tag}
 
-    tree = custom_tree_to_tagged_tree(tree, ctx)
+    tree = custom_tree_to_tagged_tree(tree, ctx, _serialization_context=serialization_context)
     if tree_finalizer is not None:
         tree_finalizer(tree)
 
-    schema.validate(tree, ctx)
+    schema.validate(tree, ctx, _serialization_context=serialization_context)
     schema.remove_defaults(tree, ctx)
 
     yaml_version = tuple(
         int(x) for x in ctx.version_map['YAML_VERSION'].split('.'))
 
     yaml.dump_all(
-        [tree], stream=fd, Dumper=AsdfDumperTmp,
+        [tree], stream=fd, Dumper=AsdfDumper,
         explicit_start=True, explicit_end=True,
         version=yaml_version,
         allow_unicode=True, encoding='utf-8',

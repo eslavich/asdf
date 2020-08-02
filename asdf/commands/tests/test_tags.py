@@ -25,7 +25,7 @@ def test_list_schemas_and_tags():
     tag_lines = _get_tags(True)
 
     af = AsdfFile()
-    type_by_tag = af.type_index._type_by_tag
+    type_by_tag = af._type_index._type_by_tag
     exp_tags = sorted(type_by_tag.keys())
 
     for exp_tag, line in zip(exp_tags, tag_lines):

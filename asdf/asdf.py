@@ -8,7 +8,7 @@ import warnings
 import numpy as np
 from jsonschema import ValidationError
 
-from ._config import get_config
+from .config import get_config
 from . import block
 from . import constants
 from . import generic_io
@@ -23,7 +23,12 @@ from . import tagged
 from . import _display as display
 from ._helpers import validate_version
 from .exceptions import AsdfDeprecationWarning, AsdfWarning, AsdfConversionWarning
-from .extension import AsdfExtensionList, ExtensionProxy
+from .extension import (
+    AsdfExtensionList,
+    ExtensionProxy,
+    ExtensionManager,
+    SerializationContext,
+)
 from .util import NotSet
 from .search import AsdfSearchResult
 
@@ -113,6 +118,7 @@ class AsdfFile:
 
         self._extensions = self._process_extensions(extensions)
         self._extension_list = None
+        self._extension_manager = None
 
         if custom_schema is not None:
             self._custom_schema = schema._load_schema_cached(custom_schema, self.resolver, True, False)
@@ -197,7 +203,7 @@ class AsdfFile:
 
         Returns
         -------
-        list of asdf.AsdfExtension
+        list of asdf.extension.AsdfExtension
         """
         return self._extensions
 
@@ -214,6 +220,20 @@ class AsdfFile:
             self._extension_list = AsdfExtensionList(self.extensions)
         return self._extension_list
 
+    @property
+    def extension_manager(self):
+        """
+        Get the ExtensionManager for this AsdfFile's enabled
+        extensions.
+
+        Returns
+        -------
+        asdf.extension.ExtensionManager
+        """
+        if self._extension_manager is None:
+            self._extension_manager = ExtensionManager(self.extensions)
+        return self._extension_manager
+
     def add_extension(self, extension):
         """
         Enable an extension for use with this AsdfFile.
@@ -222,7 +242,7 @@ class AsdfFile:
 
         Parameters
         ----------
-        extension : asdf.AsdfExtension or str
+        extension : asdf.extension.AsdfExtension or str
             Extension instance or URI.
         """
         if isinstance(extension, str):
@@ -242,6 +262,7 @@ class AsdfFile:
 
         self._extensions.append(extension)
         self._extension_list = None
+        self._extension_manager = None
 
     def remove_extension(self, extension):
         """
@@ -250,7 +271,7 @@ class AsdfFile:
 
         Parameters
         ----------
-        extension : asdf.AsdfExtension or str
+        extension : asdf.extension.AsdfExtension or str
             Extension instance or URI.
         """
         if isinstance(extension, str):
@@ -260,6 +281,10 @@ class AsdfFile:
             self._extensions = [e for e in self._extensions if e.delegate is not extension.delegate]
 
         self._extension_list = None
+        self._extension_manager = None
+
+    def _get_serialization_context(self):
+        return SerializationContext(self.version_string, self.extension_manager)
 
     def __enter__(self):
         return self
@@ -279,7 +304,7 @@ class AsdfFile:
             ]
 
         if not isinstance(requested_extensions, list):
-            raise TypeError("extensions must be a list of asdf.AsdfExtension instances")
+            raise TypeError("extensions must be a list of asdf.extension.AsdfExtension instances")
 
         requested_extensions = [ExtensionProxy.maybe_wrap(e) for e in requested_extensions]
 
@@ -909,21 +934,17 @@ class AsdfFile:
         fd.write(b'\n')
 
         if len(tree):
-            # yamlutil.custom_tree_to_tagged_tree looks for this attribute
-            # on the AsdfFile and if present, passes it to TypeIndex to
-            # record extensions used for conversion.
-            self._extensions_used = set()
-            try:
-                def tree_finalizer(tagged_tree):
-                    # NOTE(eslavich): We really shouldn't be updating the history
-                    # when the user called AsdfFile.write_to, but this is how it's
-                    # always worked, so I'm not going to change it now.  Something
-                    # to fix in the 3.0 release.
-                    if self._update_extension_history(self._extensions_used):
-                        tagged_tree['history'] = yamlutil.custom_tree_to_tagged_tree(self._tree['history'], self)
-                yamlutil.dump_tree(tree, fd, self, tree_finalizer=tree_finalizer)
-            finally:
-                del self._extensions_used
+            serialization_context = self._get_serialization_context()
+            def tree_finalizer(tagged_tree):
+                # NOTE(eslavich): We really shouldn't be updating the history
+                # when the user called AsdfFile.write_to, but this is how it's
+                # always worked, so I'm not going to change it now.  Something
+                # to fix in the 3.0 release.
+                if self._update_extension_history(serialization_context.extensions_used):
+                    tagged_tree['history'] = yamlutil.custom_tree_to_tagged_tree(
+                        self._tree['history'], self, _serialization_context=serialization_context
+                    )
+            yamlutil.dump_tree(tree, fd, self, tree_finalizer=tree_finalizer, _serialization_context=serialization_context)
 
         if pad_blocks:
             padding = util.calculate_padding(
@@ -1689,7 +1710,7 @@ def _select_extensions(
         # If the user did specify extensions, then we should
         # restrict ourselves to that list.
         if not isinstance(extensions, list):
-            raise TypeError("extensions must be a list of asdf.AsdfExtension instances")
+            raise TypeError("extensions must be a list of asdf.extension.AsdfExtension instances")
 
         extensions = [ExtensionProxy.maybe_wrap(e) for e in extensions]
 

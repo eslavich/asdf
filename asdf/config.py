@@ -13,6 +13,13 @@ from . import versioning
 from ._helpers import validate_version
 
 
+__all__ = [
+    "get_config",
+    "config_context",
+    "AsdfConfig",
+]
+
+
 DEFAULT_VALIDATE_ON_READ = True
 DEFAULT_DEFAULT_VERSION = str(versioning.default_version)
 
@@ -122,7 +129,7 @@ class AsdfConfig:
 
         Returns
         -------
-        list of asdf.AsdfExtension
+        list of asdf.extension.AsdfExtension
         """
         if self._extensions is None:
             with self._lock:
@@ -138,7 +145,7 @@ class AsdfConfig:
 
         Returns
         -------
-        list of asdf.AsdfExtension
+        list of asdf.extension.AsdfExtension
         """
         if self._default_extensions is None:
             with self._lock:
@@ -152,7 +159,7 @@ class AsdfConfig:
 
         Parameters
         ----------
-        extension : asdf.AsdfExtension
+        extension : asdf.extension.AsdfExtension
         """
         extension = ExtensionProxy.maybe_wrap(extension)
         with self._lock:
@@ -173,7 +180,7 @@ class AsdfConfig:
 
         Parameters
         ----------
-        extension : asdf.AsdfExtension or str, optional
+        extension : asdf.extension.AsdfExtension or str, optional
             An extension instance or URI to remove.
         package : str, optional
             A Python package name whose extensions will all be removed.
@@ -202,7 +209,7 @@ class AsdfConfig:
 
         Parameters
         ----------
-        extension : asdf.AsdfExtension or str
+        extension : asdf.extension.AsdfExtension or str
             Extension instance or URI.
 
         Raises
@@ -233,7 +240,7 @@ class AsdfConfig:
 
         Parameters
         ----------
-        extension : asdf.AsdfExtension or str, optional
+        extension : asdf.extension.AsdfExtension or str, optional
             Extension instance or URI to remove.
         package : str, optional
             A Python package name whose extensions will all be removed.
@@ -260,7 +267,7 @@ class AsdfConfig:
 
         Returns
         -------
-        asdf.AsdfExtension
+        asdf.extension.AsdfExtension
 
         Raises
         ------

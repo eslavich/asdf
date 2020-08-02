@@ -284,7 +284,7 @@ def get_class_name(obj, instance=True):
     """
 
     typ = type(obj) if instance else obj
-    return "{}.{}".format(typ.__module__, typ.__name__)
+    return "{}.{}".format(typ.__module__, typ.__qualname__)
 
 
 def minversion(module, version, inclusive=True, version_path='__version__'):
