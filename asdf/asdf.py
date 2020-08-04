@@ -22,7 +22,7 @@ from . import versioning
 from . import yamlutil
 from . import _display as display
 from .exceptions import AsdfDeprecationWarning, AsdfWarning, AsdfConversionWarning
-from .extension import AsdfExtensionList, AsdfExtension, ExtensionProxy
+from .extension import AsdfExtensionList, AsdfExtension, ExtensionProxy, ExtensionManager
 from .util import NotSet
 from .search import AsdfSearchResult
 from ._helpers import validate_version
@@ -174,7 +174,7 @@ class AsdfFile:
 
     @version.setter
     def version(self, value):
-        """"
+        """
         Set this AsdfFile's ASDF Standard version.
 
         Parameters
@@ -182,6 +182,7 @@ class AsdfFile:
         value : str or asdf.versioning.AsdfVersion
         """
         self._version = versioning.AsdfVersion(validate_version(value))
+        self.extensions = self._process_extensions(self.extensions)
 
     @property
     def version_string(self):
@@ -221,12 +222,27 @@ class AsdfFile:
         value : list of asdf.extension.AsdfExtension
         """
         self._extensions = self._process_extensions(value)
+        self._extension_manager = None
         self._extension_list = None
+
+    @property
+    def extension_manager(self):
+        """
+        Get the ExtensionManager for this AsdfFile.
+
+        Returns
+        -------
+        asdf.extension.ExtensionManager
+        """
+        if self._extension_manager is None:
+            self._extension_manager = ExtensionManager(self.extensions)
+        return self._extension_manager
 
     @property
     def extension_list(self):
         """
         Get the AsdfExtensionList for this AsdfFile.
+
         Returns
         -------
         asdf.extension.AsdfExtensionList
@@ -247,17 +263,27 @@ class AsdfFile:
             return
 
         for extension in tree['history']['extensions']:
-            installed = next((e for e in self.extensions if e.class_name == extension.extension_class), None)
+            installed = None
+            for ext in self.extensions:
+                if (not ext.legacy and ext.extension_uri == extension.extension_uri
+                    or extension.extension_class in ext.legacy_class_names
+                    or ext.legacy and ext.class_name == extension.extension_class):
+                    installed = ext
+                    break
 
             filename = "'{}' ".format(self._fname) if self._fname else ''
             if installed is None:
-                msg = "File {}was created with extension '{}', which is " \
+                if extension.extension_uri:
+                    description = "URI '{}'".format(extension.extension_uri)
+                else:
+                    description = "class '{}'".format(extension.extension_class)
+                msg = "File {}was created with extension {}, which is " \
                     "not currently installed"
                 if extension.software:
                     msg += " (from package {}-{})".format(
                         extension.software['name'],
                         extension.software['version'])
-                fmt_msg = msg.format(filename, extension.extension_class)
+                fmt_msg = msg.format(filename, description)
                 if strict:
                     raise RuntimeError(fmt_msg)
                 else:
@@ -267,12 +293,19 @@ class AsdfFile:
                 # Local extensions may not have a real version
                 if not installed.package_version:
                     continue
+                # Don't bother comparing versions if the package name changed
+                if installed.package_name != extension.software['name']:
+                    continue
                 # Compare version in file metadata with installed version
                 if parse_version(installed.package_version) < parse_version(extension.software['version']):
-                    msg = "File {}was created with extension '{}' from " \
+                    if extension.extension_uri:
+                        description = "URI '{}'".format(extension.extension_uri)
+                    else:
+                        description = "class '{}'".format(extension.extension_class)
+                    msg = "File {}was created with extension {} from " \
                     "package {}-{}, but older version {}-{} is installed"
                     fmt_msg = msg.format(
-                        filename, extension.extension_class,
+                        filename, description,
                         extension.software['name'],
                         extension.software['version'],
                         installed.package_name, installed.package_version)
@@ -296,12 +329,23 @@ class AsdfFile:
             )
 
         requested_extensions = [ExtensionProxy.maybe_wrap(e) for e in requested_extensions]
+        version_appropriate_extensions = []
+        for extension in requested_extensions:
+            if self.version_string not in extension.asdf_standard_requirement:
+                warnings.warn(
+                    "Extension {} does not support ASDF Standard {}.  It has been disabled.".format(
+                        extension, self.version_string
+                    ),
+                    AsdfWarning
+                )
+            else:
+                version_appropriate_extensions.append(extension)
 
         extensions = []
         # Add requested extensions to the list first, so that they
         # take precedence.
-        for extension in requested_extensions + get_config().extensions:
-            if extension not in extensions:
+        for extension in version_appropriate_extensions + get_config().extensions:
+            if self.version_string in extension.asdf_standard_requirement and extension not in extensions:
                 extensions.append(extension)
 
         return extensions
@@ -328,10 +372,15 @@ class AsdfFile:
             ext_meta = ExtensionMetadata(extension_class=ext_name)
             if extension.package_name is not None:
                 ext_meta['software'] = Software(name=extension.package_name, version=extension.package_version)
+            if extension.extension_uri is not None:
+                ext_meta['extension_uri'] = extension.extension_uri
 
             for i, entry in enumerate(self.tree['history']['extensions']):
                 # Update metadata about this extension if it already exists
-                if entry.extension_class == ext_meta.extension_class:
+                if (not extension.legacy and entry.extension_uri == extension.extension_uri
+                    or entry.extension_class in extension.legacy_class_names
+                    or extension.legacy and entry.extension_class == ext_meta.extension_class):
+
                     self.tree['history']['extensions'][i] = ext_meta
                     break
             else:
@@ -1629,8 +1678,9 @@ class SerializationContext:
     """
     Container for parameters of the current (de)serialization.
     """
-    def __init__(self, version):
+    def __init__(self, version, extension_manager):
         self._version = validate_version(version)
+        self._extension_manager = extension_manager
 
         self._extensions_used = set()
 
@@ -1644,6 +1694,17 @@ class SerializationContext:
         str
         """
         return self._version
+
+    @property
+    def extension_manager(self):
+        """
+        Get the ExtensionManager for enabled extensions.
+
+        Returns
+        -------
+        asdf.extension.ExtensionManager
+        """
+        return self._extensions_used
 
     def mark_extension_used(self, extension):
         """
