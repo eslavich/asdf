@@ -19,7 +19,7 @@ class Extension(abc.ABC):
     def __subclasshook__(cls, C):
         if cls is Extension:
             return hasattr(C, "extension_uri")
-        return NotImplemented
+        return NotImplemented # pragma: no cover
 
     @abc.abstractproperty
     def extension_uri(self):
@@ -30,7 +30,7 @@ class Extension(abc.ABC):
         -------
         str
         """
-        pass
+        pass # pragma: no cover
 
     @property
     def converters(self):
@@ -112,10 +112,43 @@ class ExtensionProxy(Extension, AsdfExtension):
 
         self._legacy = isinstance(delegate, AsdfExtension)
 
-        self._converters = None
-        self._asdf_standard_requirement = None
-        self._tags = None
-        self._legacy_class_names = None
+        # Sort these out up-front so that errors are raised when the extension is loaded
+        # and not in the middle of the user's session.  The extension will fail to load
+        # and a warning will be emitted, but it won't crash the program.
+        self._converters = [ConverterProxy(c, self) for c in getattr(self._delegate, "converters", [])]
+
+        value = getattr(self._delegate, "asdf_standard_requirement", None)
+        if isinstance(value, str):
+            self._asdf_standard_requirement = SpecifierSet(value)
+        elif value is None:
+            self._asdf_standard_requirement = SpecifierSet()
+        else:
+            raise TypeError("Extension property 'asdf_standard_requirement' must be str or None")
+
+        self._tags = []
+        extension_tags = getattr(self._delegate, "tags", None)
+        if extension_tags is None:
+            for converter in self._converters:
+                self._tags.extend(converter.tags)
+        else:
+            converter_tags_by_uri = {t.tag_uri: t for c in self._converters for t in c.tags}
+            for tag in extension_tags:
+                if isinstance(tag, str):
+                    converter_tag = converter_tags_by_uri.get(tag)
+                    if converter_tag is not None:
+                        self._tags.append(converter_tag)
+                elif isinstance(tag, TagDefinition):
+                    if tag.tag_uri in converter_tags_by_uri:
+                        self._tags.append(tag)
+                else:
+                    raise TypeError("Extension property 'tags' must contain str or asdf.extension.TagDefinition values")
+
+        self._legacy_class_names = set()
+        for class_name in getattr(self._delegate, "legacy_class_names", []):
+            if isinstance(class_name, str):
+                self._legacy_class_names.add(class_name)
+            else:
+                raise TypeError("Extension property 'legacy_class_names' must contain str values")
 
     @property
     def extension_uri(self):
@@ -137,8 +170,6 @@ class ExtensionProxy(Extension, AsdfExtension):
         -------
         list of asdf.extension.Converter
         """
-        if self._converters is None:
-            self._converters = [ConverterProxy(c, self) for c in getattr(self._delegate, "converters", [])]
         return self._converters
 
     @property
@@ -150,14 +181,6 @@ class ExtensionProxy(Extension, AsdfExtension):
         -------
         packaging.specifiers.SpecifierSet
         """
-        if self._asdf_standard_requirement is None:
-            value = getattr(self._delegate, "asdf_standard_requirement", None)
-            if isinstance(value, str):
-                self._asdf_standard_requirement = SpecifierSet(value)
-            elif value is None:
-                self._asdf_standard_requirement = SpecifierSet()
-            else:
-                raise TypeError("asdf_standard_requirement must be str or None")
         return self._asdf_standard_requirement
 
     @property
@@ -169,29 +192,9 @@ class ExtensionProxy(Extension, AsdfExtension):
         -------
         list of asdf.extension.TagDefinition
         """
-        if self._tags is None:
-            result = []
-
-            tags = getattr(self._delegate, "tags", None)
-            if tags is None:
-                for converter in self.converters:
-                    result.extend(converter.tags)
-            else:
-                converter_tags_by_uri = {t.tag_uri: t for c in self.converters for t in c.tags}
-                for tag in tags:
-                    if isinstance(tag, str):
-                        converter_tag = converter_tags_by_uri.get(tag)
-                        if converter_tag is not None:
-                            result.append(converter_tag)
-                    elif isinstance(tag, TagDefinition):
-                        if tag.tag_uri in converter_tags_by_uri:
-                            result.append(tag)
-                    else:
-                        raise TypeError("Extension tags values must be str or asdf.extension.TagDefinition")
-
-            self._tags = result
         return self._tags
 
+    @property
     def legacy_class_names(self):
         """
         Get this extension's legacy class names.
@@ -200,8 +203,6 @@ class ExtensionProxy(Extension, AsdfExtension):
         -------
         set of str
         """
-        if self._legacy_class_names is None:
-            self._legacy_class_names = set(getattr(self._delegate, "legacy_class_names", set()))
         return self._legacy_class_names
 
     @property

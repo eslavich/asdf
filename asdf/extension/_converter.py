@@ -28,7 +28,7 @@ class Converter(abc.ABC):
                     hasattr(C, "types") and
                     hasattr(C, "to_yaml_tree") and
                     hasattr(C, "from_yaml_tree"))
-        return NotImplemented
+        return NotImplemented # pragma: no cover
 
     @abc.abstractproperty
     def tags(self):
@@ -40,7 +40,7 @@ class Converter(abc.ABC):
         iterable of str or asdf.extension.TagDefinition
             If str, the tag URI.
         """
-        pass
+        pass # pragma: no cover
 
     @abc.abstractproperty
     def types(self):
@@ -49,11 +49,10 @@ class Converter(abc.ABC):
 
         Returns
         -------
-        iterable of str or type, or None
+        iterable of str or type
             If str, the fully qualified class name of the type.
-            If None, use all types provided by the converters.
         """
-        pass
+        pass # pragma: no cover
 
     def select_tag(self, obj, tags, ctx):
         """
@@ -121,7 +120,7 @@ class Converter(abc.ABC):
         dict or list or str
             The YAML node representation of the object.
         """
-        pass
+        pass # pragma: no cover
 
     @abc.abstractmethod
     def from_yaml_tree(self, node, tag, ctx):
@@ -154,7 +153,7 @@ class Converter(abc.ABC):
             An instance of one of the types listed in the `types` property,
             or a generator that yields such an instance.
         """
-        pass
+        pass # pragma: no cover
 
 
 class ConverterProxy(Converter):
@@ -170,7 +169,24 @@ class ConverterProxy(Converter):
         self._extension = extension
         self._class_name = get_class_name(delegate)
 
-        self._tags = None
+        # Sort these out up-front so that errors are raised when the extension is loaded
+        # and not in the middle of the user's session.  The extension will fail to load
+        # and a warning will be emitted, but it won't crash the program.
+        self._tags = []
+        for tag in delegate.tags:
+            if isinstance(tag, str):
+                self._tags.append(TagDefinition(tag))
+            elif isinstance(tag, TagDefinition):
+                self._tags.append(tag)
+            else:
+                raise TypeError("Converter property 'tags' must contain str or asdf.extension.TagDefinition values")
+
+        self._types = []
+        for typ in delegate.types:
+            if isinstance(typ, (str, type)):
+                self._types.append(typ)
+            else:
+                raise TypeError("Converter property 'types' must contain str or type values")
 
     @property
     def tags(self):
@@ -181,16 +197,6 @@ class ConverterProxy(Converter):
         -------
         list of asdf.extension.TagDescription
         """
-        if self._tags is None:
-            tags = []
-            for tag in self._delegate.tags:
-                if isinstance(tag, str):
-                    tags.append(TagDefinition(tag))
-                elif isinstance(tag, TagDefinition):
-                    tags.append(tag)
-                else:
-                    raise TypeError("Converter tags values must be str or asdf.extension.TagDefinition")
-            self._tags = tags
         return self._tags
 
     @property
@@ -200,9 +206,9 @@ class ConverterProxy(Converter):
 
         Returns
         -------
-        list of type
+        list of type or str
         """
-        return list(self._delegate.types)
+        return self._types
 
     def select_tag(self, obj, tags, ctx):
         """
@@ -299,10 +305,7 @@ class ConverterProxy(Converter):
         str or None
             Package name, or `None` if the extension was added at runtime.
         """
-        if self.extension is None:
-            return None
-        else:
-            return self.extension.package_name
+        return self.extension.package_name
 
     @property
     def package_version(self):
@@ -316,10 +319,7 @@ class ConverterProxy(Converter):
         str or None
             Package version, or `None` if the extension was added at runtime.
         """
-        if self.extension is None:
-            return None
-        else:
-            return self.extension.package_version
+        return self.extension.package_version
 
     @property
     def class_name(self):
@@ -334,12 +334,12 @@ class ConverterProxy(Converter):
 
     def __eq__(self, other):
         if isinstance(other, ConverterProxy):
-            return other.delegate is self.delegate
+            return other.delegate is self.delegate and other.extension is self.extension
         else:
             return False
 
     def __hash__(self):
-        return hash(id(self.delegate))
+        return hash((id(self.delegate), id(self.extension)))
 
     def __repr__(self):
         if self.package_name is None:

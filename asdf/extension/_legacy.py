@@ -7,9 +7,6 @@ from ..type_index import AsdfTypeIndex
 from ..exceptions import AsdfDeprecationWarning
 
 
-ASDF_TEST_BUILD_ENV = 'ASDF_TEST_BUILD'
-
-
 class AsdfExtension(metaclass=abc.ABCMeta):
     """
     Abstract base class defining a (legacy) extension to ASDF.
