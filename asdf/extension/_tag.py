@@ -68,3 +68,4 @@ class TagDefinition:
         str or None
         """
         return self._description
+

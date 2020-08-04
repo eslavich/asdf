@@ -5,9 +5,11 @@ from packaging.specifiers import SpecifierSet
 from asdf.extension import (
     Extension,
     ExtensionProxy,
+    ExtensionManager,
     TagDefinition,
     Converter,
     ConverterProxy,
+    AsdfExtension,
     BuiltinExtension,
 )
 from asdf.types import CustomType
@@ -104,6 +106,19 @@ class FullConverter(MinimumConverter):
         return "select_tag result"
 
 
+# Some dummy types for testing converters:
+class FooType:
+    pass
+
+
+class BarType:
+    pass
+
+
+class BazType:
+    pass
+
+
 def test_extension_proxy_maybe_wrap():
     extension = MinimumExtension()
     proxy = ExtensionProxy.maybe_wrap(extension)
@@ -118,6 +133,9 @@ def test_extension_proxy():
     # Test with minimum properties:
     extension = MinimumExtension()
     proxy = ExtensionProxy(extension)
+
+    assert isinstance(proxy, Extension)
+    assert isinstance(proxy, AsdfExtension)
 
     assert proxy.extension_uri == "asdf://somewhere.org/extensions/minimum-1.0"
     assert proxy.converters == []
@@ -308,6 +326,82 @@ def test_extension_proxy_repr():
     assert "legacy: True" in repr(proxy)
 
 
+def test_extension_manager():
+    converter1 = FullConverter(
+        tags=[
+            TagDefinition(
+                "asdf://somewhere.org/extensions/full/tags/foo-1.0",
+                title="High precedence foo tag",
+            ),
+            "asdf://somewhere.org/extensions/full/tags/bar-1.0",
+        ],
+        types=[
+            FooType,
+            "asdf.tests.test_extension.BarType",
+        ],
+    )
+    converter2 = FullConverter(
+        tags=[
+            "asdf://somewhere.org/extensions/full/tags/baz-1.0",
+        ],
+        types=[
+            BazType
+        ],
+    )
+    converter3= FullConverter(
+        tags=[
+            TagDefinition(
+                "asdf://somewhere.org/extensions/full/tags/foo-1.0",
+                title="Low precedence foo tag",
+            ),
+        ],
+        types=[
+            FooType,
+            BarType,
+        ],
+    )
+    extension1 = FullExtension(
+        converters=[converter1, converter2],
+        tags=[
+            "asdf://somewhere.org/extensions/full/tags/foo-1.0",
+            "asdf://somewhere.org/extensions/full/tags/baz-1.0",
+        ]
+    )
+    extension2 = FullExtension(
+        converters=[converter3],
+    )
+
+    manager = ExtensionManager([extension1, extension2])
+
+    assert manager.extensions == [ExtensionProxy(extension1), ExtensionProxy(extension2)]
+
+    assert manager.handles_tag("asdf://somewhere.org/extensions/full/tags/foo-1.0") is True
+    assert manager.handles_tag("asdf://somewhere.org/extensions/full/tags/bar-1.0") is False
+    assert manager.handles_tag("asdf://somewhere.org/extensions/full/tags/baz-1.0") is True
+
+    assert manager.handles_type(FooType) is True
+    # This should return True even though BarType was listed
+    # as string class name:
+    assert manager.handles_type(BarType) is True
+    assert manager.handles_type(BazType) is True
+
+    assert manager.get_tag_definition("asdf://somewhere.org/extensions/full/tags/foo-1.0").title == "High precedence foo tag"
+    assert manager.get_tag_definition("asdf://somewhere.org/extensions/full/tags/baz-1.0").tag_uri == "asdf://somewhere.org/extensions/full/tags/baz-1.0"
+    with pytest.raises(KeyError):
+        manager.get_tag_definition("asdf://somewhere.org/extensions/full/tags/bar-1.0")
+
+    assert manager.get_converter_for_tag("asdf://somewhere.org/extensions/full/tags/foo-1.0").delegate is converter1
+    assert manager.get_converter_for_tag("asdf://somewhere.org/extensions/full/tags/baz-1.0").delegate is converter2
+    with pytest.raises(KeyError):
+        manager.get_converter_for_tag("asdf://somewhere.org/extensions/full/tags/bar-1.0")
+
+    assert manager.get_converter_for_type(FooType).delegate is converter1
+    assert manager.get_converter_for_type(BarType).delegate is converter1
+    assert manager.get_converter_for_type(BazType).delegate is converter2
+    with pytest.raises(KeyError):
+        manager.get_converter_for_type(object)
+
+
 def test_tag_definition():
     tag_def = TagDefinition(
         "asdf://somewhere.org/extensions/foo/tags/foo-1.0",
@@ -354,6 +448,9 @@ def test_converter_proxy():
     extension = ExtensionProxy(MinimumExtension())
     converter = MinimumConverter()
     proxy = ConverterProxy(converter, extension)
+
+    assert isinstance(proxy, Converter)
+
     assert proxy.tags == []
     assert proxy.types == []
     assert proxy.to_yaml_tree(None, None, None) == "to_yaml_tree result"
@@ -380,12 +477,6 @@ def test_converter_proxy():
     assert "package: (none)" in repr(proxy)
 
     # Test the full set of converter methods:
-    class Foo:
-        pass
-
-    class Bar:
-        pass
-
     converter = FullConverter(
         tags=[
             "asdf://somewhere.org/extensions/test/tags/foo-1.0",
@@ -396,7 +487,7 @@ def test_converter_proxy():
                 description="Some tag description"
             ),
         ],
-        types=[Foo, Bar]
+        types=[FooType, BarType]
     )
 
     extension = ExtensionProxy(MinimumExtension(), package_name="foo", package_version="1.2.3")
@@ -409,7 +500,7 @@ def test_converter_proxy():
     assert proxy.tags[1].schema_uri == "asdf://somewhere.org/extensions/test/schemas/bar-1.0"
     assert proxy.tags[1].title == "Some tag title"
     assert proxy.tags[1].description == "Some tag description"
-    assert proxy.types == [Foo, Bar]
+    assert proxy.types == [FooType, BarType]
     assert proxy.to_yaml_tree(None, None, None) == "to_yaml_tree result"
     assert proxy.from_yaml_tree(None, None, None) == "from_yaml_tree result"
     assert proxy.select_tag(None, ["tag1", "tag2"], None) == "select_tag result"
