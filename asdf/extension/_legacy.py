@@ -12,7 +12,8 @@ ASDF_TEST_BUILD_ENV = 'ASDF_TEST_BUILD'
 
 class AsdfExtension(metaclass=abc.ABCMeta):
     """
-    Abstract base class defining an extension to ASDF.
+    Abstract base class defining a (legacy) extension to ASDF.
+    New code should use `asdf.extension.Extension` instead.
     """
     @classmethod
     def __subclasshook__(cls, C):

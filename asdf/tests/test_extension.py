@@ -1,6 +1,6 @@
 import pytest
 
-from asdf.extension import BuiltinExtension, ExtensionProxy
+from asdf.extension import BuiltinExtension, ExtensionProxy, TagDefinition
 from asdf.types import CustomType
 
 from asdf.tests.helpers import assert_extension_correctness
@@ -67,3 +67,17 @@ def test_proxy_repr():
     assert "class: asdf.tests.test_extension.LegacyExtension" in repr(proxy)
     assert "package: (none)" in repr(proxy)
     assert "legacy: True" in repr(proxy)
+
+
+def test_tag_definition():
+    tag_def = TagDefinition(
+        "asdf://somewhere.org/extensions/foo/tags/foo-1.0",
+        schema_uri="asdf://somewhere.org/extensions/foo/schemas/foo-1.0",
+        title="Some title",
+        description="Some description",
+    )
+
+    assert tag_def.tag_uri == "asdf://somewhere.org/extensions/foo/tags/foo-1.0"
+    assert tag_def.schema_uri == "asdf://somewhere.org/extensions/foo/schemas/foo-1.0"
+    assert tag_def.title == "Some title"
+    assert tag_def.description == "Some description"
