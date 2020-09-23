@@ -5,84 +5,6 @@ python: 3.8
 
 jobs:
   include:
-    # Python 3.8, stable dependencies
-    - env: TOXENV=py38
-
-    # Python 3.7, stable dependencies
-    - env: TOXENV=py37
-      python: 3.7
-
-    # Python 3.6, stable dependencies
-    - env: TOXENV=py36
-      python: 3.6
-
-    # Test ASDF file compatibility between library versions
-    - env: TOXENV=compatibility
-
-    # Do a coverage test
-    - env: TOXENV=coverage
-
-    # Perform a sanity check of packaging using twine
-    - env: TOXENV=twine
-
-    # Make sure README will display properly on pypi
-    - env: TOXENV=checkdocs
-
-    # Check for sphinx doc build warnings
-    - env: TOXENV=docbuild
-      addons:
-        apt:
-          packages:
-            - graphviz
-            - texlive-latex-extra
-            - dvipng
-
-    # Do a code style check
-    - env: TOXENV=style
-
-    # Check older numpy versions
-    - env: TOXENV=py36-numpy11
-      python: 3.6
-
-    - env: TOXENV=py36-numpy12
-      python: 3.6
-
-    # Test against oldest compatible versions of all dependencies
-    - env: TOXENV=py36-legacy
-      python: 3.6
-
-    # Test against development version of Astropy
-    - env: TOXENV=py38-astropydev
-
-    # Test against development version of GWCS
-    - env: TOXENV=py38-gwcsdev
-
-    # Test against development version of numpy (allowed failure)
-    - env: TOXENV=py38-numpydev
-
-    # Test against prerelease versions of all dependencies (allowed failure)
-    - env: TOXENV=prerelease
-
-    # Test against an installed asdf package
-    - env: TOXENV=packaged
-
-    # Test with warnings converted to errors
-    - env: TOXENV=warnings
-
-    # Test on OS X
-    - env:
-        - TOXENV=py38
-        - PATH=/usr/local/opt/python@3.8/bin:$PATH
-      os: osx
-      osx_image: xcode12
-      language: shell
-      addons:
-        homebrew:
-          packages:
-            - python@3.8
-      install:
-        - pip3 install tox
-
     # Test on Windows
     - env:
         - TOXENV=py38
@@ -91,21 +13,6 @@ jobs:
       language: shell
       before_install:
         - choco install python --version=3.8
-
-    # Test on big-endian platform
-    - env: TOXENV=s390x
-      arch: s390x
-
-  allow_failures:
-    - env: TOXENV=prerelease
-
-    - env: TOXENV=py38-numpydev
-
-    - env: TOXENV=warnings
-
-    # This build frequently fails due to timeout
-    - env: TOXENV=s390x
-      arch: s390x
 
 install: pip install tox
 
