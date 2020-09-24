@@ -28,10 +28,10 @@ def _create_base_asdf(version, oname):
 
 
 def _create_edited_yaml(base_yaml, edited_yaml, pattern, replacement):
-    with open(base_yaml) as fd:
+    with open(base_yaml, "rb") as fd:
         content = fd.read()
         new_content = re.sub(pattern, replacement, content)
-        with open(edited_yaml, "w") as fd:
+        with open(edited_yaml, "wb") as fd:
             fd.write(new_content)
 
 
@@ -56,7 +56,7 @@ def test_edit_smaller(tmpdir, version):
         tmpdir, version, "smaller"
     )
 
-    _create_edited_yaml(yaml_base, yaml_edit, "foo: 42", "foo: 2")
+    _create_edited_yaml(yaml_base, yaml_edit, b"foo: 42", b"foo: 2")
     print(f"Smaller test: Original YAML size = {os.path.getsize(yaml_base)}")
     print(f"Smaller test: Edit     YAML size = {os.path.getsize(yaml_edit)}")
 
@@ -75,7 +75,7 @@ def test_edit_equal(tmpdir, version):
         tmpdir, version, "equal"
     )
 
-    _create_edited_yaml(yaml_base, yaml_edit, "foo: 42", "foo: 41")
+    _create_edited_yaml(yaml_base, yaml_edit, b"foo: 42", b"foo: 41")
     print(f"Equal test: Original YAML size = {os.path.getsize(yaml_base)}")
     print(f"Equal test: Edit     YAML size = {os.path.getsize(yaml_edit)}")
 
@@ -88,14 +88,13 @@ def test_edit_equal(tmpdir, version):
         assert af.tree["foo"] == 41
 
 
-"""
 @pytest.mark.parametrize("version", asdf.versioning.supported_versions)
 def test_edit_larger(tmpdir, version):
     asdf_base, yaml_base, asdf_edit, yaml_edit = _initialize_test(
         tmpdir, version, "larger"
     )
 
-    _create_edited_yaml(yaml_base, yaml_edit, "foo: 42", "foo: 42\nbar: 13")
+    _create_edited_yaml(yaml_base, yaml_edit, b"foo: 42", b"foo: 42\nbar: 13")
 
     args = ["edit", "-s", "-f", f"{yaml_edit}", "-o", f"{asdf_edit}"]
     main.main_from_args(args)
@@ -103,4 +102,3 @@ def test_edit_larger(tmpdir, version):
 
     with asdf.open(asdf_edit) as af:
         assert "bar" in af.tree
-"""
