@@ -326,4 +326,4 @@ def open_editor(path):
     Launch an editor process with the file at path opened.
     """
     editor = os.environ.get("EDITOR", DEFAULT_EDITOR)
-    subprocess.run([editor, path], check=True)
+    subprocess.run(f"{editor} {path}", check=True, shell=True)

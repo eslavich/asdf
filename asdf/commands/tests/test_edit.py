@@ -5,7 +5,84 @@ import numpy as np
 import pytest
 
 import asdf
-from asdf.commands import main
+from asdf.commands import main, edit
+
+
+@pytest.fixture
+def create_editor(tmp_path):
+    """
+    Fixture providing a function that generates an executable
+    editor script.
+    """
+    def _create_editor(pattern, replacement):
+        editor_path = tmp_path / "editor.py"
+
+        content = f"""import re
+import sys
+
+with open(sys.argv[1], "r") as file:
+    content = file.read()
+
+content = re.sub({pattern!r}, {replacement!r}, content, re.DOTALL)
+
+with open(sys.argv[1], "w") as file:
+    file.write(content)
+"""
+
+        with editor_path.open("w") as file:
+            file.write(content)
+
+        return f"python {editor_path}"
+
+    return _create_editor
+
+
+@pytest.fixture
+def mock_input(monkeypatch):
+    """
+    Fixture providing a function that mocks the edit module's
+    built-in input function.
+    """
+    def _mock_input(pattern, response):
+        def _input(prompt=None):
+            assert prompt is not None and re.match(pattern, prompt)
+            return response
+
+        monkeypatch.setattr(edit, "input", _input)
+
+    return _mock_input
+
+
+@pytest.mark.parametrize("version", asdf.versioning.supported_versions)
+def test_no_blocks(tmp_path, create_editor, version):
+    file_path = str(tmp_path/"test.asdf")
+
+    with asdf.AsdfFile(version=version) as af:
+        af["foo"] = "bar"
+        af.write_to(file_path)
+
+    os.environ["EDITOR"] = create_editor(r"foo: bar", "foo: baz")
+
+    main.main_from_args(["edit", file_path])
+
+    with asdf.open(file_path) as af:
+        assert af["foo"] == "baz"
+
+
+@pytest.mark.parametrize("version", asdf.versioning.supported_versions)
+def test_no_blocks_(tmp_path, create_editor, mock_input, version):
+    file_path = str(tmp_path/"test.asdf")
+
+    with asdf.AsdfFile(version=version) as af:
+        af["foo"] = "bar"
+        af.write_to(file_path)
+
+    os.environ["EDITOR"] = create_editor(r"foo: bar", "foo: elephant")
+
+    main.main_from_args(["edit", file_path])
+
+    with asdf.open(file_path) as af:
+        assert af["foo"] == "elephant"
 
 
 def _create_base_asdf_stream(version, oname):
