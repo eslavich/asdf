@@ -11,24 +11,47 @@ on:
         description: gwcs ref
         required: true
         default: master
+      specutils_ref:
+        description: specutils ref
+        required: true
+        default: master
+
+env:
+  CRDS_SERVER_URL: https://jwst-crds.stsci.edu
+  CRDS_PATH: ~/crds_cache
+  CRDS_CLIENT_RETRY_COUNT: 3
+  CRDS_CLIENT_RETRY_DELAY_SECONDS: 20
 
 jobs:
-  gwcs:
-    name: gwcs unit tests
+  common:
+    name: ${{ matrix.package_name }} unit tests
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package_name: specutils
+            repository: astropy/specutils
+            ref: ${{ github.event.inputs.specutils_ref }}
+          - package_name: gwcs
+            repository: spacetelescope/gwcs
+            ref: ${{ github.event.inputs.gwcs_ref }}
+          - package_name: specutils
+            repository: spacetelescope/jwst
+            ref: ${{ github.event.inputs.jwst_ref }}
     steps:
       - uses: actions/checkout@v2
         with:
           fetch-depth: 0
-          repository: spacetelescope/gwcs
-          ref: ${{ github.event.inputs.gwcs_ref }}
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.ref }}
       - name: Set up Python 3.9
         uses: actions/setup-python@v2
         with:
           python-version: 3.9
       - name: Install asdf
         run: pip install git+https://github.com/asdf-format/asdf@${{ github.event.inputs.asdf_ref }}
-      - name: Install remaining gwcs dependencies
+      - name: Install remaining ${{ matrix.package_name }} dependencies
         run: pip install .[test]
       - name: Run tests
         run: pytest
