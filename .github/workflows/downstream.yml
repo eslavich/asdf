@@ -34,15 +34,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - package_name: specutils
-            repository: astropy/specutils
-            ref: ${{ github.event.inputs.specutils_ref }}
           - package_name: gwcs
             repository: spacetelescope/gwcs
             ref: ${{ github.event.inputs.gwcs_ref }}
-          - package_name: specutils
+          - package_name: jwst
             repository: spacetelescope/jwst
             ref: ${{ github.event.inputs.jwst_ref }}
+          - package_name: specutils
+            repository: astropy/specutils
+            ref: ${{ github.event.inputs.specutils_ref }}
     steps:
       - uses: actions/checkout@v2
         with:
