@@ -1,0 +1,34 @@
+name: Downstream Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      asdf_ref:
+        description: asdf ref
+        required: true
+        default: master
+      gwcs_ref:
+        description: gwcs ref
+        required: true
+        default: master
+
+jobs:
+  gwcs:
+    name: gwcs unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+          repository: gwcs
+          ref: ${{ github.event.inputs.gwcs_ref }}
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+      - name: Install asdf
+        run: pip install git+https://github.com/asdf-format/asdf@${{ github.event.inputs.asdf_ref }}
+      - name: Install remaining gwcs dependencies
+        run: pip install .[test]
+      - name: Run tests
+        run: pytest
