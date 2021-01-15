@@ -38,10 +38,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - package_name: astropy
-            repository: astropy/astropy
-            ref: ${{ github.event.inputs.astropy_ref }}
-            test_command: pytest --pyargs astropy
           - package_name: gwcs
             repository: spacetelescope/gwcs
             ref: ${{ github.event.inputs.gwcs_ref }}
@@ -68,5 +64,20 @@ jobs:
         run: pip install git+https://github.com/asdf-format/asdf@${{ github.event.inputs.asdf_ref }}
       - name: Install remaining ${{ matrix.package_name }} dependencies
         run: pip install .[test]
-      - name: Run tests
+      - name: Run ${{ matrix.package_name}} tests
         run: ${{ matrix.test_command }}
+
+  astropy:
+    name: astropy unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+      - name: Install asdf
+        run: pip install git+https://github.com/asdf-format/asdf@${{ github.event.inputs.asdf_ref }}
+      - name: Install astropy
+        run: pip install git+https://github.com/astropy/astropy@${{ github.event.inputs.astropy_ref }}#egg=astropy[test]
+      - name: Run astropy tests
+        run: pytest --pyargs astropy
