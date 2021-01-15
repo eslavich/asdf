@@ -23,6 +23,9 @@ on:
         description: specutils ref
         required: true
         default: master
+  schedule:
+    # Run every Monday at 6am UTC
+    - cron: '0 6 * * 1'
 
 env:
   CRDS_SERVER_URL: https://jwst-crds.stsci.edu
@@ -40,15 +43,15 @@ jobs:
         include:
           - package_name: gwcs
             repository: spacetelescope/gwcs
-            ref: ${{ github.event.inputs.gwcs_ref }}
+            ref: ${{ github.event.inputs.gwcs_ref || 'master' }}
             test_command: pytest
           - package_name: jwst
             repository: spacetelescope/jwst
-            ref: ${{ github.event.inputs.jwst_ref }}
+            ref: ${{ github.event.inputs.jwst_ref || 'master' }}
             test_command: pytest
           - package_name: specutils
             repository: astropy/specutils
-            ref: ${{ github.event.inputs.specutils_ref }}
+            ref: ${{ github.event.inputs.specutils_ref || 'master' }}
             test_command: pytest
     steps:
       - uses: actions/checkout@v2
@@ -61,14 +64,14 @@ jobs:
         with:
           python-version: 3.9
       - name: Install asdf
-        run: pip install git+https://github.com/asdf-format/asdf@${{ github.event.inputs.asdf_ref }}
+        run: pip install git+https://github.com/asdf-format/asdf@${{ github.event.inputs.asdf_ref || 'master' }}
       - name: Install remaining ${{ matrix.package_name }} dependencies
         run: pip install .[test]
       - name: Run ${{ matrix.package_name}} tests
         run: ${{ matrix.test_command }}
 
   astropy:
-    name: astropy@${{ github.event.inputs.astropy_ref }} unit tests
+    name: astropy@${{ github.event.inputs.astropy_ref || 'master' }} unit tests
     runs-on: ubuntu-latest
     steps:
       - name: Set up Python 3.9
@@ -76,8 +79,8 @@ jobs:
         with:
           python-version: 3.9
       - name: Install asdf
-        run: pip install git+https://github.com/asdf-format/asdf@${{ github.event.inputs.asdf_ref }}
+        run: pip install git+https://github.com/asdf-format/asdf@${{ github.event.inputs.asdf_ref || 'master' }}
       - name: Install astropy
-        run: pip install git+https://github.com/astropy/astropy@${{ github.event.inputs.astropy_ref }}#egg=astropy[test]
+        run: pip install git+https://github.com/astropy/astropy@${{ github.event.inputs.astropy_ref || 'master' }}#egg=astropy[test]
       - name: Run astropy tests
         run: pytest --pyargs astropy
