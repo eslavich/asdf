@@ -7,6 +7,10 @@ on:
         description: asdf ref
         required: true
         default: master
+      astropy_ref:
+        description: astropy ref
+        required: true
+        default: master
       gwcs_ref:
         description: gwcs ref
         required: true
@@ -34,6 +38,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - package_name: astropy
+            repository: astropy/astropy
+            ref: ${{ github.event.inputs.astropy_ref }}
           - package_name: gwcs
             repository: spacetelescope/gwcs
             ref: ${{ github.event.inputs.gwcs_ref }}
