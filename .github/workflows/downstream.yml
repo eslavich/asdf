@@ -41,15 +41,19 @@ jobs:
           - package_name: astropy
             repository: astropy/astropy
             ref: ${{ github.event.inputs.astropy_ref }}
+            test_command: pytest --pyargs astropy
           - package_name: gwcs
             repository: spacetelescope/gwcs
             ref: ${{ github.event.inputs.gwcs_ref }}
+            test_command: pytest
           - package_name: jwst
             repository: spacetelescope/jwst
             ref: ${{ github.event.inputs.jwst_ref }}
+            test_command: pytest
           - package_name: specutils
             repository: astropy/specutils
             ref: ${{ github.event.inputs.specutils_ref }}
+            test_command: pytest
     steps:
       - uses: actions/checkout@v2
         with:
@@ -65,4 +69,4 @@ jobs:
       - name: Install remaining ${{ matrix.package_name }} dependencies
         run: pip install .[test]
       - name: Run tests
-        run: pytest
+        run: ${{ matrix.test_command }}
