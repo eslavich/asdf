@@ -11,6 +11,10 @@ on:
         description: gwcs ref
         required: true
         default: master
+      jwst_ref:
+        description: jwst ref
+        required: true
+        default: master
       specutils_ref:
         description: specutils ref
         required: true
